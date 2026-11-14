@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Braille Bridge</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 60 90" width="26" height="39" aria-hidden="true" id="logo"></svg>
+    <div><h1>Braille Bridge</h1><p>Text-to-Braille conversion and learning</p></div>
+  </div>
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" id="t-convert" aria-controls="p-convert" aria-selected="true">Convert</button>
+    <button role="tab" id="t-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Learn</button>
+    <button role="tab" id="t-device" aria-controls="p-device" aria-selected="false" tabindex="-1">Device</button>
+  </nav>
+</header>
+<main id="main">
+<div id="status" class="status" role="status" aria-live="polite"></div>
+
+<!-- ============ CONVERT ============ -->
+<section id="p-convert" role="tabpanel" aria-labelledby="t-convert">
+  <div class="grid">
+    <div class="card">
+      <h2>1. Enter or capture text</h2>
+      <label for="text">Text to convert</label>
+      <textarea id="text" rows="7" placeholder="Type or paste English or Hindi text, upload a photo of a page, or dictate."></textarea>
+      <div class="row">
+        <div><label for="lang">Language</label>
+          <select id="lang"><option value="auto">Detect automatically</option><option value="en">English</option><option value="hi">Hindi (Bharati Braille)</option></select></div>
+        <div><label for="grade">English grade</label>
+          <select id="grade"><option value="1">Grade 1 (uncontracted)</option><option value="2">Grade 2 (simplified)</option></select></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btn-convert">Convert</button>
+        <button id="btn-sample">Sample</button>
+        <button id="btn-clear">Clear</button>
+      </div>
+      <hr>
+      <h3>Photo of a page (OCR)</h3>
+      <div class="row">
+        <div><label for="ocr-lang">Page language</label>
+          <select id="ocr-lang"><option value="eng">English</option><option value="hin">Hindi</option><option value="eng+hin">English + Hindi</option></select></div>
+        <div><label for="file">Image file</label><input type="file" id="file" accept="image/*" capture="environment"></div>
+      </div>
+      <p class="hint" id="ocr-note"></p>
+      <h3>Dictation</h3>
+      <div class="actions"><button id="btn-mic">Start dictation</button><span class="hint" id="mic-note"></span></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Braille output</h2>
+      <p class="hint" id="meta">Nothing converted yet.</p>
+      <div id="warn" class="warn" hidden></div>
+      <label for="unicode">Unicode Braille</label>
+      <output id="unicode" class="unicode" aria-live="polite"></output>
+      <div class="actions">
+        <button id="btn-copy" disabled>Copy</button>
+        <button id="btn-brf" disabled>Download .brf</button>
+        <button id="btn-txt" disabled>Download .txt</button>
+        <button id="btn-speak" disabled>Read text aloud</button>
+      </div>
+      <details class="decode-box" style="margin-top: .8rem;">
+        <summary style="cursor:pointer; font-weight:600;">Braille to Text Decoder (Reverse)</summary>
+        <div style="margin-top: .5rem;">
+          <input id="braille-input" placeholder="Type/paste Unicode Braille (e.g. ⠓⠑⠇⠇⠕) or ASCII Braille">
+          <div class="actions" style="margin-top:.4rem;">
+            <button type="button" class="primary" id="btn-decode">Decode</button>
+            <span class="hint" id="decode-res"></span>
+          </div>
+        </div>
+      </details>
+      <h3>Cells</h3>
+      <div id="strip" class="strip" aria-label="Braille cells"></div>
+    </div>
+  </div>
+
+  <div class="card player">
+    <h2>3. Feel it, one cell at a time</h2>
+    <div class="player-body">
+      <div class="big" id="bigcell" aria-hidden="true"></div>
+      <div class="player-info">
+        <p class="current" id="cur" aria-live="polite">—</p>
+        <div class="actions">
+          <button id="p-prev">Back</button>
+          <button class="primary" id="p-play">Play</button>
+          <button id="p-next">Next</button>
+        </div>
+        <label for="speed">Seconds per cell</label>
+        <select id="speed"><option>0.5</option><option>1</option><option selected>1.5</option><option>2</option><option>3</option></select>
+        <label class="check"><input type="checkbox" id="to-device" checked> Also send to the Braille cell (Device tab)</label>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LEARN ============ -->
+<section id="p-learn" role="tabpanel" aria-labelledby="t-learn" hidden>
+  <div class="grid">
+    <div class="card">
+      <h2>Practice</h2>
+      <div class="row">
+        <div><label for="user">Your name</label><input id="user" value="guest" maxlength="40" autocomplete="off"></div>
+        <div><label for="set">Lesson</label><select id="set"></select></div>
+      </div>
+      <fieldset><legend>Mode</legend>
+        <label class="check"><input type="radio" name="mode" value="read" checked> Read: see the cell, choose the character</label>
+        <label class="check"><input type="radio" name="mode" value="write"> Write: see the character, set the dots</label>
+      </fieldset>
+      <label class="check"><input type="checkbox" id="speak-on" checked> Speak characters aloud</label>
+      <div class="meter" aria-label="Mastery"><div id="meter-bar"></div></div>
+      <p class="hint" id="meter-txt"></p>
+      <div class="actions"><button id="btn-reset">Reset my progress</button></div>
+    </div>
+    <div class="card quiz" aria-live="polite">
+      <div id="quiz"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Progress</h2>
+    <table class="table"><thead><tr><th>Lesson</th><th>Mastered</th><th>Answers</th><th>Correct</th></tr></thead><tbody id="prog"></tbody></table>
+  </div>
+</section>
+
+<!-- ============ DEVICE ============ -->
+<section id="p-device" role="tabpanel" aria-labelledby="t-device" hidden>
+  <div class="grid">
+    <div class="card">
+      <h2>ESP32 Braille cell</h2>
+      <p class="hint">Connect the physical ESP32 over USB (<code>firmware/braille_cell.ino</code>) or use the built-in Virtual Simulator to test on-screen.</p>
+      <label for="port">Serial port</label>
+      <div class="row"><select id="port"></select><button id="btn-ports">Refresh</button></div>
+      <label for="delay">Seconds per cell</label>
+      <select id="delay"><option>0.5</option><option selected>1</option><option>1.5</option><option>2</option><option>3</option></select>
+      <label class="check"><input type="checkbox" id="sound-on" checked> Hardware buzzer tone (1000 Hz) & servo audio</label>
+      <p class="hint" id="dev-note"></p>
+      <div class="meter"><div id="dev-bar"></div></div>
+      <p class="hint" id="dev-status">Idle.</p>
+      <div class="actions"><button class="primary" id="btn-dev-send">Send current Braille</button><button id="btn-dev-stop">Stop</button></div>
+    </div>
+    <div class="card">
+      <h2>Test a pattern</h2>
+      <p class="hint">Click the dots (or press 1–6) and send a single cell to check the wiring and servo angles.</p>
+      <div id="test-cell" class="editor"></div>
+      <p class="current" id="test-code">Cell value 0</p>
+      <div class="actions"><button class="primary" id="btn-test-send">Send this cell</button><button id="btn-test-clear">Clear dots</button></div>
+      <div class="actions quick-presets">
+        <span class="hint" style="margin-right:.4rem;">Presets:</span>
+        <button type="button" class="btn-preset" id="p-dot1">A (Dot 1)</button>
+        <button type="button" class="btn-preset" id="p-dot12">B (1-2)</button>
+        <button type="button" class="btn-preset" id="p-dot14">C (1-4)</button>
+        <button type="button" class="btn-preset" id="p-full">Full (1–6)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card sim-board-card">
+    <div class="sim-header">
+      <div>
+        <h2>Hardware Simulator: ESP32 + PCA9685 Braille Cell</h2>
+        <p class="hint">Real-time mechanical servo actuation (20° down, 70° up), 40ms stagger, buzzer tone, and pin 32 tactile switch.</p>
+      </div>
+      <div class="sim-indicators">
+        <span class="ind" id="ind-serial"><span class="dot-led" id="led-tx"></span> USB TX/RX</span>
+        <span class="ind" id="ind-buzzer"><span class="dot-led buzzer" id="led-buzzer"></span> Buzzer (GPIO 25)</span>
+        <button type="button" class="btn-hw" id="btn-hw-next" title="Simulates pressing hardware button BTN_NEXT on GPIO 32">Hardware Next Button (GPIO 32)</button>
+      </div>
+    </div>
+    <div class="sim-body">
+      <div class="sim-box tactile-cell-box">
+        <div class="tactile-title">Tactile 6-Dot Mechanical Cell</div>
+        <div class="tactile-grid" id="tactile-grid">
+          <div class="tactile-pin" data-dot="1"><div class="pin-head">1</div><div class="pin-angle">20°</div></div>
+          <div class="tactile-pin" data-dot="4"><div class="pin-head">4</div><div class="pin-angle">20°</div></div>
+          <div class="tactile-pin" data-dot="2"><div class="pin-head">2</div><div class="pin-angle">20°</div></div>
+          <div class="tactile-pin" data-dot="5"><div class="pin-head">5</div><div class="pin-angle">20°</div></div>
+          <div class="tactile-pin" data-dot="3"><div class="pin-head">3</div><div class="pin-angle">20°</div></div>
+          <div class="tactile-pin" data-dot="6"><div class="pin-head">6</div><div class="pin-angle">20°</div></div>
+        </div>
+        <div class="tactile-meta" id="sim-cell-meta">Active Cell: 0 (blank)</div>
+      </div>
+      <div class="sim-box servo-channels-box">
+        <div class="tactile-title">PCA9685 Servo Channels (50Hz PWM)</div>
+        <div class="channels-grid" id="channels-grid">
+          <!-- Dynamically populated 6 channels -->
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer>Braille Bridge · Alliance University capstone project · runs locally on your computer</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
