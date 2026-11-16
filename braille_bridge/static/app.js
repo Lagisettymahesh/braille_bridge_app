@@ -326,16 +326,25 @@ $('#file').addEventListener('change', async e => {
     }
   }
 
-  function setVAState(active) {
+  function setVAState(active, speakGreeting = true) {
     vaActive = active;
     btnToggle.classList.toggle('active', active);
     btnToggle.setAttribute('aria-pressed', String(active));
     if (banner) banner.hidden = !active;
     if (active) {
       if (statusText) statusText.textContent = 'Voice Assistant Active';
-      announce('Voice Assistant active. How can I help you?', () => {
-        if (statusText) statusText.textContent = 'Listening for commands…';
-      });
+      if (speakGreeting) {
+        const greeting = getGreeting();
+        const msg = `${greeting} Welcome to Braille Bridge. What file do you want to upload, and what file do you want to convert?`;
+        announce(msg, () => {
+          if (statusText) statusText.textContent = 'Opening file selector now…';
+          setTimeout(() => {
+            if ($('#pdf-file')) $('#pdf-file').click();
+          }, 400);
+        });
+      } else {
+        startListening();
+      }
     } else {
       stopListening();
       setStatus('');
@@ -483,10 +492,12 @@ $('#file').addEventListener('change', async e => {
     }
 
     // 6. Read Aloud
-    if (phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') || phrase.includes('speak') || phrase.includes('read this')) {
+    if (phrase === 'yes' || phrase === 'sure' || phrase === 'yeah' || phrase.includes('yes read') ||
+        phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') ||
+        phrase.includes('speak') || phrase.includes('read this') || phrase.includes('read it')) {
       const text = $('#text').value;
       if (!text.trim()) {
-        announce('No text to read aloud. Please type, dictate, or upload a PDF first.');
+        announce('No text to read aloud. Please upload a PDF or enter text first.');
       } else {
         announce('Reading text aloud: ' + text);
       }
@@ -539,6 +550,57 @@ $('#file').addEventListener('change', async e => {
       if (cmd) processCommand(cmd);
     };
   });
+
+  function getGreeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Hello and good morning!';
+    if (hour < 17) return 'Hello and good afternoon!';
+    return 'Hello and good evening!';
+  }
+
+  let autoWelcomeDone = false;
+
+  function autoWelcomeAndAsk() {
+    if (autoWelcomeDone) return;
+    autoWelcomeDone = true;
+
+    vaActive = true;
+    btnToggle.classList.add('active');
+    btnToggle.setAttribute('aria-pressed', 'true');
+    if (banner) banner.hidden = false;
+
+    const greeting = getGreeting();
+    const promptMessage = `${greeting} Welcome to Braille Bridge. What file do you want to upload, and what file do you want to convert?`;
+
+    if (statusText) statusText.textContent = 'Voice Assistant Active (Automated)';
+    if (transcriptEl) transcriptEl.innerHTML = `<strong>${promptMessage}</strong>`;
+
+    speak(promptMessage, 'en-IN', () => {
+      if (statusText) statusText.textContent = 'Opening file selector to upload…';
+      setTimeout(() => {
+        try {
+          if ($('#pdf-file')) $('#pdf-file').click();
+        } catch(e) {}
+        startListening();
+      }, 400);
+    });
+  }
+
+  // Automatically start as soon as website opens
+  setTimeout(autoWelcomeAndAsk, 600);
+
+  // Fallback for browsers with strict gesture policy: any touch, click or keypress unlocks audio & file picker
+  function handleFirstUserTouch() {
+    if (!autoWelcomeDone) autoWelcomeAndAsk();
+    window.removeEventListener('click', handleFirstUserTouch);
+    window.removeEventListener('keydown', handleFirstUserTouch);
+    window.removeEventListener('touchstart', handleFirstUserTouch);
+    window.removeEventListener('pointerdown', handleFirstUserTouch);
+  }
+  window.addEventListener('click', handleFirstUserTouch);
+  window.addEventListener('keydown', handleFirstUserTouch);
+  window.addEventListener('touchstart', handleFirstUserTouch);
+  window.addEventListener('pointerdown', handleFirstUserTouch);
 })();
 
 /* ---------- dictation ---------- */
