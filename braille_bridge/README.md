@@ -2,7 +2,8 @@
 
 A local web app (Flask + plain JavaScript) with three tabs:
 
-- **Convert**: English (Grade 1 and a Grade 2 subset) and Hindi (Bharati Braille) to Braille. Type, dictate (Chrome/Edge), or photograph a page (OCR). Copy Unicode Braille, download `.brf` / `.txt`, read aloud, step through cells on screen.
+- **Convert**: English (Grade 1 and a Grade 2 subset) and Hindi (Bharati Braille) to Braille. Type, dictate (Chrome/Edge), upload PDF documents, or photograph a page (OCR). Copy Unicode Braille, download `.brf` / `.txt`, read aloud, step through cells on screen.
+- **Voice Assistant**: Built-in hands-free voice assistant. Say *"Open website"*, *"Upload PDF"*, *"Convert"*, *"Read aloud"*, or press <kbd>Alt+V</kbd>. Also includes a standalone Python voice assistant (`voice_assistant.py`).
 - **Learn**: read mode (see the cell, pick the character) and write mode (set the dots with the mouse or keys 1-6). Progress is saved per user in SQLite using Leitner boxes.
 - **Device**: send cells to the ESP32 + PCA9685 + 6 servo Braille cell over USB serial.
 

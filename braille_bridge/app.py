@@ -1,7 +1,7 @@
 """Braille Bridge – local web application.  Run:  python app.py   then open http://127.0.0.1:5050"""
 import os
 from flask import Flask, jsonify, request, send_from_directory
-import braille, learning, ocr, device
+import braille, learning, ocr, device, documents
 
 MAX_TEXT = 20000
 
@@ -55,6 +55,13 @@ def create_app(db_path=None):
         f = request.files.get('image')
         if not f:
             return err('Attach an image in the "image" field')
+        filename = (f.filename or '').lower()
+        if filename.endswith('.pdf'):
+            try:
+                res = documents.extract_pdf_text(f.read())
+                return jsonify(text=res['text'], chars=res['chars'], pages=res['pages'], is_scanned=res['is_scanned'])
+            except Exception as e:
+                return err(f'PDF extraction error: {e}')
         try:
             text = ocr.read_text(f.read(), request.form.get('ocr_lang', 'eng'))
         except ValueError as e:
@@ -62,6 +69,44 @@ def create_app(db_path=None):
         except RuntimeError as e:
             return err(str(e), 503)
         return jsonify(text=text, chars=len(text))
+
+    @app.post('/api/upload-pdf')
+    def upload_pdf():
+        f = request.files.get('pdf') or request.files.get('file') or request.files.get('document')
+        if not f:
+            return err('Attach a PDF document in the "pdf" or "file" field')
+        filename = f.filename or ''
+        if not filename.lower().endswith('.pdf'):
+            return err('The uploaded file must be a .pdf document')
+        try:
+            data = f.read()
+            res = documents.extract_pdf_text(data)
+        except ValueError as e:
+            return err(str(e))
+        except Exception as e:
+            return err(f"Failed to process PDF: {e}", 500)
+
+        auto_convert = request.form.get('convert', 'false').lower() in ('1', 'true', 'yes')
+        lang = request.form.get('lang', 'auto')
+        grade = request.form.get('grade', 1)
+
+        payload = {
+            'ok': True,
+            'filename': filename,
+            'text': res['text'],
+            'pages': res['pages'],
+            'total_pages': res['total_pages'],
+            'chars': res['chars'],
+            'is_scanned': res['is_scanned']
+        }
+        if auto_convert and res['text']:
+            try:
+                c_res = braille.convert_full(res['text'][:MAX_TEXT], lang, int(grade))
+                c_res['brf'] = braille.to_brf(c_res['cells'])
+                payload['conversion'] = c_res
+            except Exception:
+                pass
+        return jsonify(payload)
 
     # ---------------- learning ----------------
     def uname():

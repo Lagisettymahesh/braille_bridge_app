@@ -109,3 +109,19 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:1.2rem}
 .channel-row.up .channel-fill{background:var(--brand);width:39%}
 .channel-val{font-family:monospace;font-weight:700;text-align:right}
 
+/* Voice Assistant and PDF Upload */
+.voice-assistant-btn{display:inline-flex;align-items:center;gap:.45rem;background:color-mix(in srgb,var(--brand) 12%,transparent);border:1.5px solid var(--brand);color:var(--brand);font-weight:600;border-radius:999px;padding:.45rem .95rem;cursor:pointer;transition:all .2s ease}
+.voice-assistant-btn:hover{background:var(--brand);color:var(--brand-ink)}
+.voice-assistant-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;animation:va-pulse-anim 1.5s infinite}
+@keyframes va-pulse-anim{0%{box-shadow:0 0 0 0 rgba(192,57,43,.6)}70%{box-shadow:0 0 0 10px rgba(192,57,43,0)}100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}
+.va-banner{background:color-mix(in srgb,var(--brand) 8%,var(--card));border:1.5px solid var(--brand);border-radius:12px;padding:.85rem 1.1rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;box-shadow:0 4px 12px rgba(0,0,0,.06)}
+.va-indicator{display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem}
+.va-pulse-dot{width:10px;height:10px;border-radius:50%;background:var(--brand);display:inline-block;animation:va-dot-blink 1s infinite alternate}
+@keyframes va-dot-blink{from{opacity:.35;transform:scale(.8)}to{opacity:1;transform:scale(1.25)}}
+.va-transcript{margin:.15rem 0 .5rem;font-size:.92rem;color:var(--ink)}
+.va-chips{display:flex;flex-wrap:wrap;gap:.35rem}
+.va-chip{background:var(--card);border:1px solid var(--line);font-size:.8rem;padding:.2rem .6rem;border-radius:999px;cursor:pointer;min-height:28px}
+.va-chip:hover{border-color:var(--brand);color:var(--brand)}
+.va-close{background:transparent;border:none;font-size:1.4rem;cursor:pointer;color:var(--muted);min-height:auto;padding:0 .3rem;line-height:1}
+
+

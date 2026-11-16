@@ -3,6 +3,7 @@ cd /d %~dp0
 title Braille Bridge
 echo ========================================
 echo   Starting Braille Bridge...
+echo   Voice Assistant + PDF Support Active
 echo ========================================
 
 python -m pip install -q -r requirements.txt

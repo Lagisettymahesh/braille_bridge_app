@@ -1,7 +1,7 @@
 import io, os, sys, shutil
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
-import braille, learning, ocr
+import braille, learning, ocr, documents
 from app import create_app
 
 
@@ -121,4 +121,41 @@ def test_ocr_reads_rendered_text():
     ImageDraw.Draw(img).text((20, 40), 'Braille Bridge', fill='black', font=font)
     b = io.BytesIO(); img.save(b, 'PNG')
     assert 'braille' in ocr.read_text(b.getvalue(), 'eng').lower()
+
+
+# ---------- Documents & PDF ----------
+def test_pdf_extraction_blank():
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    b = io.BytesIO()
+    writer.write(b)
+    res = documents.extract_pdf_text(b.getvalue())
+    assert res['pages'] == 1
+    assert res['total_pages'] == 1
+    assert res['text'] == ''
+    assert res['is_scanned'] is True
+
+
+def test_api_upload_pdf(client):
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    b = io.BytesIO()
+    writer.write(b)
+    b.seek(0)
+    data = {'pdf': (b, 'sample.pdf')}
+    r = client.post('/api/upload-pdf', data=data, content_type='multipart/form-data')
+    assert r.status_code == 200
+    res = r.get_json()
+    assert res['ok'] is True
+    assert res['filename'] == 'sample.pdf'
+    assert res['pages'] == 1
+
+
+def test_api_upload_pdf_invalid_extension(client):
+    data = {'pdf': (io.BytesIO(b'not a pdf'), 'sample.txt')}
+    r = client.post('/api/upload-pdf', data=data, content_type='multipart/form-data')
+    assert r.status_code == 400
+
 

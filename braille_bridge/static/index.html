@@ -13,14 +13,39 @@
     <svg viewBox="0 0 60 90" width="26" height="39" aria-hidden="true" id="logo"></svg>
     <div><h1>Braille Bridge</h1><p>Text-to-Braille conversion and learning</p></div>
   </div>
-  <nav role="tablist" aria-label="Sections">
-    <button role="tab" id="t-convert" aria-controls="p-convert" aria-selected="true">Convert</button>
-    <button role="tab" id="t-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Learn</button>
-    <button role="tab" id="t-device" aria-controls="p-device" aria-selected="false" tabindex="-1">Device</button>
-  </nav>
+  <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+    <button id="btn-va-toggle" class="voice-assistant-btn" type="button" title="Toggle Voice Assistant (Alt+V)" aria-pressed="false">
+      <span aria-hidden="true">🎙️</span> Voice Assistant
+    </button>
+    <nav role="tablist" aria-label="Sections">
+      <button role="tab" id="t-convert" aria-controls="p-convert" aria-selected="true">Convert</button>
+      <button role="tab" id="t-learn" aria-controls="p-learn" aria-selected="false" tabindex="-1">Learn</button>
+      <button role="tab" id="t-device" aria-controls="p-device" aria-selected="false" tabindex="-1">Device</button>
+    </nav>
+  </div>
 </header>
 <main id="main">
 <div id="status" class="status" role="status" aria-live="polite"></div>
+
+<!-- ============ VOICE ASSISTANT BANNER ============ -->
+<div id="va-banner" class="va-banner" hidden>
+  <div style="flex:1">
+    <div class="va-indicator">
+      <span class="va-pulse-dot"></span>
+      <strong id="va-status-text">Voice Assistant Active</strong>
+    </div>
+    <p id="va-transcript" class="va-transcript">Listening for commands: <em>"Upload PDF"</em>, <em>"Open website"</em>, <em>"Convert"</em>, <em>"Read aloud"</em>, <em>"Help"</em>...</p>
+    <div class="va-chips">
+      <button type="button" class="va-chip" data-cmd="open website">🌐 Open website</button>
+      <button type="button" class="va-chip" data-cmd="upload pdf">📄 Upload PDF</button>
+      <button type="button" class="va-chip" data-cmd="convert">⚡ Convert</button>
+      <button type="button" class="va-chip" data-cmd="read aloud">🔊 Read aloud</button>
+      <button type="button" class="va-chip" data-cmd="clear">🧹 Clear</button>
+      <button type="button" class="va-chip" data-cmd="help">❓ Help</button>
+    </div>
+  </div>
+  <button id="va-close" class="va-close" type="button" aria-label="Close Voice Assistant">&times;</button>
+</div>
 
 <!-- ============ CONVERT ============ -->
 <section id="p-convert" role="tabpanel" aria-labelledby="t-convert">
@@ -41,13 +66,29 @@
         <button id="btn-clear">Clear</button>
       </div>
       <hr>
-      <h3>Photo of a page (OCR)</h3>
+      <h3>📄 Upload Document (PDF) or Photo</h3>
       <div class="row">
-        <div><label for="ocr-lang">Page language</label>
-          <select id="ocr-lang"><option value="eng">English</option><option value="hin">Hindi</option><option value="eng+hin">English + Hindi</option></select></div>
-        <div><label for="file">Image file</label><input type="file" id="file" accept="image/*" capture="environment"></div>
+        <div>
+          <label for="pdf-file">PDF Document</label>
+          <input type="file" id="pdf-file" accept="application/pdf" aria-label="Upload PDF Document">
+        </div>
+        <div>
+          <label for="file">Photo of a page (OCR)</label>
+          <input type="file" id="file" accept="image/*,application/pdf" capture="environment" aria-label="Upload photo or image">
+        </div>
       </div>
-      <p class="hint" id="ocr-note"></p>
+      <div class="row" style="margin-top:0.4rem;">
+        <div>
+          <label for="ocr-lang">Page language (for OCR)</label>
+          <select id="ocr-lang"><option value="eng">English</option><option value="hin">Hindi</option><option value="eng+hin">English + Hindi</option></select>
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button type="button" id="btn-quick-pdf" style="width:100%; min-height:42px;">
+            📄 Select PDF File
+          </button>
+        </div>
+      </div>
+      <p class="hint" id="ocr-note">Upload a PDF or photo to extract text and convert instantly to Braille.</p>
       <h3>Dictation</h3>
       <div class="actions"><button id="btn-mic">Start dictation</button><span class="hint" id="mic-note"></span></div>
     </div>

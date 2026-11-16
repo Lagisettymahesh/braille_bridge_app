@@ -1,5 +1,6 @@
 Flask>=3.0
 Pillow>=10.0
+pypdf>=5.0
 pytesseract>=0.3.10
 pyserial>=3.5   # optional: only for the hardware cell
 pytest>=8.0     # optional: only to run the tests

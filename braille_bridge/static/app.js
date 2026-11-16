@@ -98,9 +98,51 @@ $('#btn-brf').onclick = () => download('braille.brf', state.result.brf, 'text/pl
 $('#btn-txt').onclick = () => download('braille.txt', state.result.braille, 'text/plain;charset=utf-8');
 $('#btn-speak').onclick = () => speak($('#text').value, state.result.lang === 'hi' ? 'hi-IN' : 'en-IN');
 
+/* ---------- PDF and Document Upload ---------- */
+async function handlePdfUpload(f) {
+  if (!f) return;
+  setStatus('Extracting text from PDF: ' + f.name + '…');
+  const fd = new FormData();
+  fd.append('pdf', f);
+  fd.append('convert', '1');
+  fd.append('lang', $('#lang').value);
+  fd.append('grade', $('#grade').value);
+  try {
+    const r = await api('/api/upload-pdf', { method: 'POST', body: fd });
+    if (!r.text && r.is_scanned) {
+      const w = `Scanned PDF detected (${r.pages} page(s)). No digital text could be extracted.`;
+      setStatus(w, 'bad');
+      speak('Scanned PDF detected with no digital text.');
+      return;
+    }
+    $('#text').value = r.text;
+    const msg = `PDF "${r.filename}" loaded: ${r.chars} characters from ${r.pages} page(s).`;
+    setStatus(msg, 'ok');
+    speak(`PDF loaded. Extracted ${r.chars} characters across ${r.pages} pages. Converting to Braille.`);
+    await convert();
+  } catch (err) {
+    setStatus(err.message, 'bad');
+    speak('Error processing PDF: ' + err.message);
+  }
+}
+if ($('#pdf-file')) {
+  $('#pdf-file').addEventListener('change', e => {
+    handlePdfUpload(e.target.files[0]);
+    e.target.value = '';
+  });
+}
+if ($('#btn-quick-pdf')) {
+  $('#btn-quick-pdf').onclick = () => $('#pdf-file').click();
+}
+
 /* ---------- OCR ---------- */
 $('#file').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
+  if (f.name.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf') {
+    handlePdfUpload(f);
+    e.target.value = '';
+    return;
+  }
   setStatus('Reading the page…');
   const fd = new FormData(); fd.append('image', f); fd.append('ocr_lang', $('#ocr-lang').value);
   try {
@@ -112,6 +154,183 @@ $('#file').addEventListener('change', async e => {
   } catch (err) { setStatus(err.message, 'bad'); }
   e.target.value = '';
 });
+
+/* ---------- Voice Assistant ---------- */
+(function () {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btnToggle = $('#btn-va-toggle');
+  const banner = $('#va-banner');
+  const bannerClose = $('#va-close');
+  const statusText = $('#va-status-text');
+  const transcriptEl = $('#va-transcript');
+  if (!btnToggle) return;
+
+  let vaActive = false;
+  let recognition = null;
+  let restartTimer = null;
+
+  function announce(msg) {
+    if (transcriptEl) transcriptEl.textContent = msg;
+    speak(msg);
+  }
+
+  function setVAState(active) {
+    vaActive = active;
+    btnToggle.classList.toggle('active', active);
+    btnToggle.setAttribute('aria-pressed', String(active));
+    if (banner) banner.hidden = !active;
+    if (active) {
+      if (statusText) statusText.textContent = 'Voice Assistant Listening…';
+      startListening();
+      announce('Braille Bridge Voice Assistant is active. Say "Upload PDF", "Open website", "Convert", "Read aloud", or "Help".');
+    } else {
+      stopListening();
+      setStatus('');
+    }
+  }
+
+  function startListening() {
+    if (!SR) {
+      setStatus('Speech recognition is not supported in this browser. Please use Chrome or Edge.', 'bad');
+      return;
+    }
+    if (recognition) {
+      try { recognition.abort(); } catch (e) {}
+    }
+    try {
+      recognition = new SR();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = $('#lang').value === 'hi' ? 'hi-IN' : 'en-US';
+
+      recognition.onstart = () => {
+        if (statusText) statusText.textContent = 'Voice Assistant Listening…';
+      };
+
+      recognition.onresult = event => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            const phrase = event.results[i][0].transcript.trim().toLowerCase();
+            processCommand(phrase);
+          }
+        }
+      };
+
+      recognition.onerror = e => {
+        if (e.error === 'no-speech') return;
+        if (e.error === 'not-allowed') {
+          setStatus('Microphone access denied. Please allow microphone permissions.', 'bad');
+          setVAState(false);
+        }
+      };
+
+      recognition.onend = () => {
+        if (vaActive) {
+          clearTimeout(restartTimer);
+          restartTimer = setTimeout(() => {
+            if (vaActive) startListening();
+          }, 400);
+        }
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('Voice assistant start error:', err);
+    }
+  }
+
+  function stopListening() {
+    clearTimeout(restartTimer);
+    if (recognition) {
+      try { recognition.stop(); } catch (e) {}
+      recognition = null;
+    }
+  }
+
+  function processCommand(phrase) {
+    if (!phrase) return;
+    if (transcriptEl) transcriptEl.innerHTML = `Heard: "<strong>${phrase}</strong>"`;
+
+    if (phrase.includes('upload pdf') || phrase.includes('open pdf') || phrase.includes('choose pdf') ||
+        phrase.includes('upload document') || phrase.includes('upload file') || phrase.includes('select pdf')) {
+      showTab('convert');
+      announce('Opening file selector to upload your PDF document.');
+      setTimeout(() => {
+        if ($('#pdf-file')) $('#pdf-file').click();
+      }, 500);
+      return;
+    }
+
+    if (phrase.includes('open website') || phrase.includes('website') || phrase.includes('open home') ||
+        phrase.includes('go home') || phrase.includes('home page') || phrase.includes('open convert')) {
+      showTab('convert');
+      announce('Opened Braille Bridge home website and text converter.');
+      return;
+    }
+
+    if (phrase.includes('open learn') || phrase.includes('learn') || phrase.includes('quiz') || phrase.includes('practice')) {
+      showTab('learn');
+      announce('Opened Braille Learning Center.');
+      return;
+    }
+
+    if (phrase.includes('open device') || phrase.includes('device') || phrase.includes('hardware')) {
+      showTab('device');
+      announce('Opened Hardware Device and Tactile Simulator.');
+      return;
+    }
+
+    if (phrase.includes('convert') || phrase.includes('translate')) {
+      showTab('convert');
+      announce('Converting text to Braille.');
+      convert();
+      return;
+    }
+
+    if (phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') || phrase.includes('speak')) {
+      const text = $('#text').value;
+      if (!text.trim()) {
+        announce('No text to read aloud. Please type, dictate, or upload a PDF first.');
+      } else {
+        announce('Reading text aloud.');
+        speak(text, $('#lang').value === 'hi' ? 'hi-IN' : 'en-IN');
+      }
+      return;
+    }
+
+    if (phrase.includes('clear') || phrase.includes('reset')) {
+      $('#text').value = '';
+      announce('Text cleared.');
+      return;
+    }
+
+    if (phrase.includes('help') || phrase.includes('command') || phrase.includes('what can you do')) {
+      announce('Available voice commands: upload PDF, open website, convert, read aloud, learn, device, and clear.');
+      return;
+    }
+
+    // Default: dictate speech into the text area
+    $('#text').value += (($('#text').value ? ' ' : '') + phrase);
+    if (transcriptEl) transcriptEl.innerHTML = `Dictated: "<em>${phrase}</em>"`;
+  }
+
+  btnToggle.onclick = () => setVAState(!vaActive);
+  if (bannerClose) bannerClose.onclick = () => setVAState(false);
+
+  window.addEventListener('keydown', e => {
+    if (e.altKey && (e.key === 'v' || e.key === 'V')) {
+      e.preventDefault();
+      setVAState(!vaActive);
+    }
+  });
+
+  document.querySelectorAll('.va-chip').forEach(chip => {
+    chip.onclick = () => {
+      const cmd = chip.dataset.cmd;
+      if (cmd) processCommand(cmd);
+    };
+  });
+})();
 
 /* ---------- dictation ---------- */
 (function () {
