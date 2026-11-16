@@ -77,25 +77,37 @@ TABS.forEach((t, i) => {
 });
 
 /* ---------- convert ---------- */
+function applyConversionResult(r, note) {
+  state.result = r; state.idx = 0; stopPlay();
+  $('#unicode').textContent = r.braille; $('#unicode').lang = 'en';
+  $('#meta').textContent = `${r.count} cells · ${r.lang === 'hi' ? 'Hindi (Bharati Braille)' : 'English Grade ' + r.grade} ${note || ''}`;
+  const w = $('#warn'); w.hidden = !r.unsupported || !r.unsupported.length;
+  if (r.unsupported && r.unsupported.length) {
+    w.textContent = 'These characters are not supported yet and were shown as a full cell: ' + r.unsupported.join(' ');
+  }
+  ['#btn-copy', '#btn-brf', '#btn-txt', '#btn-speak'].forEach(b => $(b).disabled = false);
+  const strip = $('#strip'); strip.replaceChildren();
+  const maxStripCells = Math.min(r.cells.length, 300);
+  for (let i = 0; i < maxStripCells; i++) {
+    const c = r.cells[i];
+    const b = el('button', { className: 'cellbox', type: 'button', title: 'Cell ' + (i + 1) + ': ' + describe(c) });
+    b.append(cellSVG(c, 26), el('small', {}, c ? r.ascii[i] : '␣'));
+    b.addEventListener('click', () => { stopPlay(); showCell(i); });
+    strip.append(b);
+  }
+  if (r.cells.length > maxStripCells) {
+    strip.append(el('p', { className: 'hint', style: 'width:100%; text-align:center; margin:0.4rem 0;' },
+      `Showing first ${maxStripCells} of ${r.cells.length} cells. Use the Player below or Download .brf for full output.`));
+  }
+  showCell(0);
+}
+
 async function convert() {
   const text = $('#text').value;
   if (!text.trim()) { setStatus('Enter some text first.', 'bad'); return; }
   try {
     const r = await post('/api/convert', { text, lang: $('#lang').value, grade: +$('#grade').value });
-    state.result = r; state.idx = 0; stopPlay();
-    $('#unicode').textContent = r.braille; $('#unicode').lang = 'en';
-    $('#meta').textContent = `${r.count} cells · ${r.lang === 'hi' ? 'Hindi (Bharati Braille)' : 'English Grade ' + r.grade}`;
-    const w = $('#warn'); w.hidden = !r.unsupported.length;
-    if (r.unsupported.length) w.textContent = 'These characters are not supported yet and were shown as a full cell: ' + r.unsupported.join(' ');
-    ['#btn-copy', '#btn-brf', '#btn-txt', '#btn-speak'].forEach(b => $(b).disabled = false);
-    const strip = $('#strip'); strip.replaceChildren();
-    r.cells.forEach((c, i) => {
-      const b = el('button', { className: 'cellbox', type: 'button', title: 'Cell ' + (i + 1) + ': ' + describe(c) });
-      b.append(cellSVG(c, 26), el('small', {}, c ? r.ascii[i] : '␣'));
-      b.addEventListener('click', () => { stopPlay(); showCell(i); });
-      strip.append(b);
-    });
-    showCell(0);
+    applyConversionResult(r);
     setStatus('Converted ' + r.count + ' cells.', 'ok');
   } catch (e) { setStatus(e.message, 'bad'); }
 }
@@ -116,7 +128,8 @@ $('#btn-speak').onclick = () => speak($('#text').value, state.result.lang === 'h
 /* ---------- PDF and Document Upload ---------- */
 async function handlePdfUpload(f) {
   if (!f) return;
-  setStatus('Extracting text from PDF: ' + f.name + '…');
+  showTab('convert');
+  setStatus('Reading and extracting PDF: ' + f.name + '…');
   const fd = new FormData();
   fd.append('pdf', f);
   fd.append('convert', '1');
@@ -130,11 +143,16 @@ async function handlePdfUpload(f) {
       speak('Scanned PDF detected with no digital text.');
       return;
     }
-    $('#text').value = r.text;
-    const msg = `PDF "${r.filename}" loaded: ${r.chars} characters from ${r.pages} page(s).`;
-    setStatus(msg, 'ok');
-    speak(`PDF loaded. Extracted ${r.chars} characters across ${r.pages} pages. Converting to Braille.`);
-    await convert();
+    $('#text').value = r.text || '';
+    if (r.conversion && r.conversion.cells) {
+      applyConversionResult(r.conversion, `from "${r.filename}"`);
+      const msg = `PDF "${r.filename}" loaded: ${r.chars} characters converted to ${r.conversion.count} Braille cells.`;
+      setStatus(msg, 'ok');
+      speak(`PDF loaded. Converted normal text to Braille text successfully. Generated ${r.conversion.count} Braille cells.`);
+    } else {
+      await convert();
+      speak(`PDF loaded. Converted normal text to Braille text successfully.`);
+    }
   } catch (err) {
     setStatus(err.message, 'bad');
     speak('Error processing PDF: ' + err.message);
@@ -394,15 +412,12 @@ $('#file').addEventListener('change', async e => {
     if (!phrase) return;
     if (transcriptEl) transcriptEl.innerHTML = `Heard: "<strong>${phrase}</strong>"`;
 
-    // 1. Upload PDF (with smart folder and filename detection)
-    // Handles: "upload pdf from desktop", "upload from downloads", "upload pdf from capston",
-    //          "upload report from desktop", "find pdf in documents", "upload pdf"
-    const uploadMatch = phrase.match(/(?:upload|open|find|load|get)\s+(?:the\s+)?(?:pdf|document|file|report)?(?:\s+from|\s+in|\s+of)?\s+(?:the\s+)?([a-z0-9_]+)/i);
-    const isGenericUpload = phrase.includes('upload pdf') || phrase.includes('open pdf') || phrase.includes('choose pdf') ||
-                            phrase.includes('upload document') || phrase.includes('upload file') || phrase.includes('select pdf') ||
-                            phrase.includes('add pdf') || phrase.includes('pdf file') || phrase.includes('pdf from');
+    // 1. Upload PDF
+    // Handles: "upload a pdf", "upload apdf", "upload pdf", "upload the pdf", "upload pdf from desktop", etc.
+    const isPdfUploadIntent = phrase.includes('pdf') || phrase.includes('document') || phrase.includes('upload file');
+    const isUploadAction = phrase.includes('upload') || phrase.includes('load') || phrase.includes('choose') || phrase.includes('select') || phrase.includes('open');
 
-    if (uploadMatch || isGenericUpload) {
+    if (isPdfUploadIntent && isUploadAction) {
       showTab('convert');
       let targetFolder = '';
       let targetQuery = '';
@@ -411,9 +426,6 @@ $('#file').addEventListener('change', async e => {
       else if (phrase.includes('download')) targetFolder = 'downloads';
       else if (phrase.includes('document')) targetFolder = 'documents';
       else if (phrase.includes('capston') || phrase.includes('capstone')) targetFolder = 'capston';
-      else if (uploadMatch && uploadMatch[1] && !['pdf', 'document', 'file', 'some', 'the', 'a', 'kind', 'folder'].includes(uploadMatch[1])) {
-        targetFolder = uploadMatch[1];
-      }
 
       if (phrase.includes('report')) targetQuery = 'report';
       else if (phrase.includes('assignment')) targetQuery = 'assignment';
@@ -425,8 +437,10 @@ $('#file').addEventListener('change', async e => {
           searchAndLoadLocalPdf(targetFolder, targetQuery);
         });
       } else {
-        announce('Scanning your folders for PDF documents…', () => {
-          searchAndLoadLocalPdf('', '');
+        announce('Please choose your PDF file. I will load and convert it to Braille.', () => {
+          setTimeout(() => {
+            if ($('#pdf-file')) $('#pdf-file').click();
+          }, 300);
         });
       }
       return;
@@ -455,14 +469,15 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 5. Convert
-    if (phrase.includes('convert') || phrase.includes('translate') || phrase.includes('make braille')) {
+    // 5. Convert Normal Text to Braille Text
+    if (phrase.includes('convert') || phrase.includes('translate') || phrase.includes('to braille') || phrase.includes('make braille')) {
       showTab('convert');
       if (!$('#text').value.trim()) {
         announce('Please enter text or upload a PDF first.');
       } else {
-        announce('Converting text to Braille.');
-        convert();
+        announce('Converting normal text to Braille text.', () => {
+          convert();
+        });
       }
       return;
     }

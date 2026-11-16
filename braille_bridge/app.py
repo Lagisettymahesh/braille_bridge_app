@@ -3,7 +3,7 @@ import os
 from flask import Flask, jsonify, request, send_from_directory
 import braille, learning, ocr, device, documents
 
-MAX_TEXT = 20000
+MAX_TEXT = 200000
 
 def create_app(db_path=None):
     app = Flask(__name__, static_folder='static', static_url_path='/static')
