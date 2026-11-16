@@ -33,9 +33,24 @@ function cellSVG(code, px, opts = {}) {
   });
   return svg;
 }
-function speak(text, lang) {
-  if (!('speechSynthesis' in window) || !text) return;
-  speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = lang || 'en-IN'; speechSynthesis.speak(u);
+function speak(text, lang, onDone) {
+  if (!('speechSynthesis' in window) || !text) {
+    if (onDone) onDone();
+    return;
+  }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = lang || 'en-IN';
+  state.isSpeaking = true;
+  u.onend = () => {
+    state.isSpeaking = false;
+    if (onDone) onDone();
+  };
+  u.onerror = () => {
+    state.isSpeaking = false;
+    if (onDone) onDone();
+  };
+  speechSynthesis.speak(u);
 }
 function download(name, text, type) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); URL.revokeObjectURL(a.href);
@@ -168,10 +183,32 @@ $('#file').addEventListener('change', async e => {
   let vaActive = false;
   let recognition = null;
   let restartTimer = null;
+  let isListening = false;
 
-  function announce(msg) {
-    if (transcriptEl) transcriptEl.textContent = msg;
-    speak(msg);
+  function announce(msg, callback) {
+    if (transcriptEl) transcriptEl.innerHTML = `<strong>${msg}</strong>`;
+    // Pause recognition while speaking to prevent acoustic self-triggering
+    pauseListening();
+    speak(msg, $('#lang').value === 'hi' ? 'hi-IN' : 'en-IN', () => {
+      resumeListening();
+      if (callback) callback();
+    });
+  }
+
+  function pauseListening() {
+    if (recognition && isListening) {
+      try { recognition.abort(); } catch (e) {}
+      isListening = false;
+    }
+  }
+
+  function resumeListening() {
+    if (vaActive && !isListening && !state.isSpeaking) {
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => {
+        if (vaActive && !state.isSpeaking) startListening();
+      }, 350);
+    }
   }
 
   function setVAState(active) {
@@ -180,9 +217,10 @@ $('#file').addEventListener('change', async e => {
     btnToggle.setAttribute('aria-pressed', String(active));
     if (banner) banner.hidden = !active;
     if (active) {
-      if (statusText) statusText.textContent = 'Voice Assistant Listening…';
-      startListening();
-      announce('Braille Bridge Voice Assistant is active. Say "Upload PDF", "Open website", "Convert", "Read aloud", or "Help".');
+      if (statusText) statusText.textContent = 'Voice Assistant Active';
+      announce('Voice Assistant active. How can I help you?', () => {
+        if (statusText) statusText.textContent = 'Listening for commands…';
+      });
     } else {
       stopListening();
       setStatus('');
@@ -194,9 +232,9 @@ $('#file').addEventListener('change', async e => {
       setStatus('Speech recognition is not supported in this browser. Please use Chrome or Edge.', 'bad');
       return;
     }
-    if (recognition) {
-      try { recognition.abort(); } catch (e) {}
-    }
+    if (state.isSpeaking) return;
+    if (recognition && isListening) return;
+
     try {
       recognition = new SR();
       recognition.continuous = true;
@@ -204,10 +242,14 @@ $('#file').addEventListener('change', async e => {
       recognition.lang = $('#lang').value === 'hi' ? 'hi-IN' : 'en-US';
 
       recognition.onstart = () => {
-        if (statusText) statusText.textContent = 'Voice Assistant Listening…';
+        isListening = true;
+        if (statusText) statusText.textContent = 'Listening for commands…';
       };
 
       recognition.onresult = event => {
+        // If system is currently speaking, discard any detected echo
+        if (state.isSpeaking) return;
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             const phrase = event.results[i][0].transcript.trim().toLowerCase();
@@ -219,99 +261,129 @@ $('#file').addEventListener('change', async e => {
       recognition.onerror = e => {
         if (e.error === 'no-speech') return;
         if (e.error === 'not-allowed') {
-          setStatus('Microphone access denied. Please allow microphone permissions.', 'bad');
+          setStatus('Microphone access denied. Please click the camera/mic icon in the address bar to allow.', 'bad');
           setVAState(false);
+          return;
         }
+        isListening = false;
       };
 
       recognition.onend = () => {
-        if (vaActive) {
+        isListening = false;
+        if (vaActive && !state.isSpeaking) {
           clearTimeout(restartTimer);
           restartTimer = setTimeout(() => {
-            if (vaActive) startListening();
-          }, 400);
+            if (vaActive && !state.isSpeaking) startListening();
+          }, 300);
         }
       };
 
       recognition.start();
     } catch (err) {
-      console.warn('Voice assistant start error:', err);
+      isListening = false;
     }
   }
 
   function stopListening() {
     clearTimeout(restartTimer);
     if (recognition) {
-      try { recognition.stop(); } catch (e) {}
+      try { recognition.abort(); } catch (e) {}
       recognition = null;
     }
+    isListening = false;
   }
 
   function processCommand(phrase) {
     if (!phrase) return;
     if (transcriptEl) transcriptEl.innerHTML = `Heard: "<strong>${phrase}</strong>"`;
 
+    // 1. Upload PDF
     if (phrase.includes('upload pdf') || phrase.includes('open pdf') || phrase.includes('choose pdf') ||
-        phrase.includes('upload document') || phrase.includes('upload file') || phrase.includes('select pdf')) {
+        phrase.includes('upload document') || phrase.includes('upload file') || phrase.includes('select pdf') ||
+        phrase.includes('add pdf') || phrase.includes('pdf file')) {
       showTab('convert');
-      announce('Opening file selector to upload your PDF document.');
-      setTimeout(() => {
-        if ($('#pdf-file')) $('#pdf-file').click();
-      }, 500);
+      announce('Opening file selector to choose your PDF document.', () => {
+        setTimeout(() => {
+          if ($('#pdf-file')) $('#pdf-file').click();
+        }, 200);
+      });
       return;
     }
 
+    // 2. Open Website / Home
     if (phrase.includes('open website') || phrase.includes('website') || phrase.includes('open home') ||
-        phrase.includes('go home') || phrase.includes('home page') || phrase.includes('open convert')) {
+        phrase.includes('go home') || phrase.includes('home page') || phrase.includes('open convert') ||
+        phrase.includes('braille bridge') || phrase.includes('main page')) {
       showTab('convert');
-      announce('Opened Braille Bridge home website and text converter.');
+      announce('Showing Braille Bridge home and converter.');
       return;
     }
 
-    if (phrase.includes('open learn') || phrase.includes('learn') || phrase.includes('quiz') || phrase.includes('practice')) {
+    // 3. Learn Tab
+    if (phrase.includes('open learn') || phrase.includes('learn') || phrase.includes('quiz') || phrase.includes('practice') || phrase.includes('study')) {
       showTab('learn');
-      announce('Opened Braille Learning Center.');
+      announce('Opening Braille Learning Center.');
       return;
     }
 
-    if (phrase.includes('open device') || phrase.includes('device') || phrase.includes('hardware')) {
+    // 4. Device Tab
+    if (phrase.includes('open device') || phrase.includes('device') || phrase.includes('hardware') || phrase.includes('simulator')) {
       showTab('device');
-      announce('Opened Hardware Device and Tactile Simulator.');
+      announce('Opening Hardware Device and Tactile Simulator.');
       return;
     }
 
-    if (phrase.includes('convert') || phrase.includes('translate')) {
+    // 5. Convert
+    if (phrase.includes('convert') || phrase.includes('translate') || phrase.includes('make braille')) {
       showTab('convert');
-      announce('Converting text to Braille.');
-      convert();
-      return;
-    }
-
-    if (phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') || phrase.includes('speak')) {
-      const text = $('#text').value;
-      if (!text.trim()) {
-        announce('No text to read aloud. Please type, dictate, or upload a PDF first.');
+      if (!$('#text').value.trim()) {
+        announce('Please enter text or upload a PDF first.');
       } else {
-        announce('Reading text aloud.');
-        speak(text, $('#lang').value === 'hi' ? 'hi-IN' : 'en-IN');
+        announce('Converting text to Braille.');
+        convert();
       }
       return;
     }
 
-    if (phrase.includes('clear') || phrase.includes('reset')) {
+    // 6. Read Aloud
+    if (phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') || phrase.includes('speak') || phrase.includes('read this')) {
+      const text = $('#text').value;
+      if (!text.trim()) {
+        announce('No text to read aloud. Please type, dictate, or upload a PDF first.');
+      } else {
+        announce('Reading text aloud: ' + text);
+      }
+      return;
+    }
+
+    // 7. Clear
+    if (phrase.includes('clear') || phrase.includes('reset') || phrase.includes('erase')) {
       $('#text').value = '';
       announce('Text cleared.');
       return;
     }
 
-    if (phrase.includes('help') || phrase.includes('command') || phrase.includes('what can you do')) {
-      announce('Available voice commands: upload PDF, open website, convert, read aloud, learn, device, and clear.');
+    // 8. Help
+    if (phrase.includes('help') || phrase.includes('command') || phrase.includes('what can you do') || phrase.includes('options')) {
+      announce('You can say: Upload PDF, Open website, Convert, Read aloud, Open learn, Open device, or Clear.');
       return;
     }
 
-    // Default: dictate speech into the text area
-    $('#text').value += (($('#text').value ? ' ' : '') + phrase);
-    if (transcriptEl) transcriptEl.innerHTML = `Dictated: "<em>${phrase}</em>"`;
+    // 9. Dictate / Type explicitly
+    if (phrase.startsWith('type ') || phrase.startsWith('write ') || phrase.startsWith('dictate ')) {
+      const dictatedText = phrase.replace(/^(type|write|dictate)\s+/, '').trim();
+      if (dictatedText) {
+        $('#text').value += (($('#text').value ? ' ' : '') + dictatedText);
+        if (transcriptEl) transcriptEl.innerHTML = `Typed: "<em>${dictatedText}</em>"`;
+        announce('Added text: ' + dictatedText);
+      }
+      return;
+    }
+
+    // If unhandled, prompt help without polluting textarea
+    if (transcriptEl) {
+      transcriptEl.innerHTML = `Heard: "<em>${phrase}</em>" &nbsp;·&nbsp; <small style="color:var(--muted)">Say <strong>"Help"</strong> or click a command below</small>`;
+    }
   }
 
   btnToggle.onclick = () => setVAState(!vaActive);

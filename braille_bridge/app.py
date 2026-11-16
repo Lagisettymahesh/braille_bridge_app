@@ -80,7 +80,8 @@ def create_app(db_path=None):
             return err('The uploaded file must be a .pdf document')
         try:
             data = f.read()
-            res = documents.extract_pdf_text(data)
+            ocr_lang = request.form.get('ocr_lang', 'eng')
+            res = documents.extract_pdf_text(data, ocr_lang=ocr_lang)
         except ValueError as e:
             return err(str(e))
         except Exception as e:
@@ -97,7 +98,8 @@ def create_app(db_path=None):
             'pages': res['pages'],
             'total_pages': res['total_pages'],
             'chars': res['chars'],
-            'is_scanned': res['is_scanned']
+            'is_scanned': res['is_scanned'],
+            'method': res.get('method', 'digital')
         }
         if auto_convert and res['text']:
             try:
