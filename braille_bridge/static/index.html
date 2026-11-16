@@ -38,6 +38,8 @@
     <div class="va-chips">
       <button type="button" class="va-chip" data-cmd="open website">🌐 Open website</button>
       <button type="button" class="va-chip" data-cmd="upload pdf">📄 Upload PDF</button>
+      <button type="button" class="va-chip" data-cmd="upload pdf from desktop">🖥️ PDF from Desktop</button>
+      <button type="button" class="va-chip" data-cmd="upload pdf from downloads">📥 PDF from Downloads</button>
       <button type="button" class="va-chip" data-cmd="convert">⚡ Convert</button>
       <button type="button" class="va-chip" data-cmd="read aloud">🔊 Read aloud</button>
       <button type="button" class="va-chip" data-cmd="clear">🧹 Clear</button>
@@ -87,6 +89,12 @@
             📄 Select PDF File
           </button>
         </div>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.6rem; align-items:center;">
+        <span style="font-size:0.85rem; font-weight:600; color:var(--muted);">Scan folder for PDF:</span>
+        <button type="button" class="va-chip" id="btn-quick-desktop">🖥️ Desktop</button>
+        <button type="button" class="va-chip" id="btn-quick-downloads">📥 Downloads</button>
+        <button type="button" class="va-chip" id="btn-quick-documents">📁 Documents</button>
       </div>
       <p class="hint" id="ocr-note">Upload a PDF or photo to extract text and convert instantly to Braille.</p>
       <h3>Dictation</h3>

@@ -150,6 +150,103 @@ if ($('#btn-quick-pdf')) {
   $('#btn-quick-pdf').onclick = () => $('#pdf-file').click();
 }
 
+/* Quick folder scan buttons */
+if ($('#btn-quick-desktop')) $('#btn-quick-desktop').onclick = () => searchAndLoadLocalPdf('desktop');
+if ($('#btn-quick-downloads')) $('#btn-quick-downloads').onclick = () => searchAndLoadLocalPdf('downloads');
+if ($('#btn-quick-documents')) $('#btn-quick-documents').onclick = () => searchAndLoadLocalPdf('documents');
+
+async function searchAndLoadLocalPdf(folder, query) {
+  showTab('convert');
+  const folderDesc = folder ? `folder "${folder}"` : 'your folders';
+  setStatus(`Scanning ${folderDesc} for PDF…`);
+  const transcriptEl = $('#va-transcript');
+  if (transcriptEl) transcriptEl.innerHTML = `Scanning <strong>${folder || 'system folders'}</strong> for PDF…`;
+
+  try {
+    const url = `/api/find-local-pdf?folder=${encodeURIComponent(folder || '')}&query=${encodeURIComponent(query || '')}&load=1&lang=${encodeURIComponent($('#lang').value)}&grade=${encodeURIComponent($('#grade').value)}`;
+    const r = await api(url);
+
+    if (!r.ok || !r.found) {
+      const failMsg = `No PDF found in ${folderDesc}. Opening file selector so you can choose it manually.`;
+      setStatus(failMsg, 'bad');
+      speak(failMsg, 'en-IN', () => {
+        setTimeout(() => { if ($('#pdf-file')) $('#pdf-file').click(); }, 300);
+      });
+      return;
+    }
+
+    if (r.loaded) {
+      const item = r.loaded;
+      $('#text').value = item.text || '';
+      if (item.conversion && item.conversion.cells) {
+        state.result = item.conversion;
+        state.idx = 0;
+        stopPlay();
+        $('#unicode').textContent = item.conversion.braille;
+        $('#meta').textContent = `${item.conversion.count} cells · Extracted from "${item.filename}" (${item.folder})`;
+        ['#btn-copy', '#btn-brf', '#btn-txt', '#btn-speak'].forEach(b => $(b).disabled = false);
+        const strip = $('#strip'); strip.replaceChildren();
+        item.conversion.cells.forEach((c, i) => {
+          const b = el('button', { className: 'cellbox', type: 'button', title: 'Cell ' + (i + 1) + ': ' + describe(c) });
+          b.append(cellSVG(c, 26), el('small', {}, c ? item.conversion.ascii[i] : '␣'));
+          b.addEventListener('click', () => { stopPlay(); showCell(i); });
+          strip.append(b);
+        });
+        showCell(0);
+      } else if (item.text) {
+        await convert();
+      }
+
+      const msg = `Found and loaded "${item.filename}" from ${item.folder} (${item.chars} chars across ${item.pages} page(s)).`;
+      setStatus(msg, 'ok');
+      speak(`Found and loaded ${item.filename} from your ${item.folder} folder. Converted to Braille successfully.`);
+
+      if (transcriptEl) {
+        transcriptEl.innerHTML = `Loaded: "<strong>${item.filename}</strong>" from <em>${item.folder}</em>`;
+      }
+      renderFoundPdfChips(r.files);
+    }
+  } catch (err) {
+    setStatus(`Error searching folder: ${err.message}`, 'bad');
+    speak(`Error finding PDF: ${err.message}`);
+  }
+}
+
+function renderFoundPdfChips(files) {
+  if (!files || files.length <= 1) return;
+  let container = $('#va-found-files');
+  if (!container) {
+    container = el('div', { id: 'va-found-files', style: 'margin-top:0.6rem; display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;' });
+    const banner = $('#va-banner');
+    if (banner) banner.querySelector('.va-chips').parentNode.appendChild(container);
+  }
+  container.replaceChildren(el('span', { style: 'font-size:0.8rem; font-weight:600; color:var(--muted);' }, 'Other PDFs in folder: '));
+  files.slice(1, 6).forEach(f => {
+    const chip = el('button', {
+      type: 'button',
+      className: 'va-chip',
+      style: 'border-color:var(--brand); font-size:0.78rem;',
+      title: f.path
+    }, '📄 ' + f.filename);
+    chip.onclick = () => loadDirectPdfPath(f.path, f.filename);
+    container.append(chip);
+  });
+}
+
+async function loadDirectPdfPath(path, filename) {
+  setStatus(`Loading ${filename}…`);
+  try {
+    const r = await api(`/api/find-local-pdf?path=${encodeURIComponent(path)}&load=1&lang=${encodeURIComponent($('#lang').value)}&grade=${encodeURIComponent($('#grade').value)}`);
+    if (r.loaded) {
+      $('#text').value = r.loaded.text || '';
+      await convert();
+      speak(`Loaded ${filename} and converted to Braille.`);
+    }
+  } catch(e) {
+    setStatus(e.message, 'bad');
+  }
+}
+
 /* ---------- OCR ---------- */
 $('#file').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
@@ -297,16 +394,41 @@ $('#file').addEventListener('change', async e => {
     if (!phrase) return;
     if (transcriptEl) transcriptEl.innerHTML = `Heard: "<strong>${phrase}</strong>"`;
 
-    // 1. Upload PDF
-    if (phrase.includes('upload pdf') || phrase.includes('open pdf') || phrase.includes('choose pdf') ||
-        phrase.includes('upload document') || phrase.includes('upload file') || phrase.includes('select pdf') ||
-        phrase.includes('add pdf') || phrase.includes('pdf file')) {
+    // 1. Upload PDF (with smart folder and filename detection)
+    // Handles: "upload pdf from desktop", "upload from downloads", "upload pdf from capston",
+    //          "upload report from desktop", "find pdf in documents", "upload pdf"
+    const uploadMatch = phrase.match(/(?:upload|open|find|load|get)\s+(?:the\s+)?(?:pdf|document|file|report)?(?:\s+from|\s+in|\s+of)?\s+(?:the\s+)?([a-z0-9_]+)/i);
+    const isGenericUpload = phrase.includes('upload pdf') || phrase.includes('open pdf') || phrase.includes('choose pdf') ||
+                            phrase.includes('upload document') || phrase.includes('upload file') || phrase.includes('select pdf') ||
+                            phrase.includes('add pdf') || phrase.includes('pdf file') || phrase.includes('pdf from');
+
+    if (uploadMatch || isGenericUpload) {
       showTab('convert');
-      announce('Opening file selector to choose your PDF document.', () => {
-        setTimeout(() => {
-          if ($('#pdf-file')) $('#pdf-file').click();
-        }, 200);
-      });
+      let targetFolder = '';
+      let targetQuery = '';
+
+      if (phrase.includes('desktop')) targetFolder = 'desktop';
+      else if (phrase.includes('download')) targetFolder = 'downloads';
+      else if (phrase.includes('document')) targetFolder = 'documents';
+      else if (phrase.includes('capston') || phrase.includes('capstone')) targetFolder = 'capston';
+      else if (uploadMatch && uploadMatch[1] && !['pdf', 'document', 'file', 'some', 'the', 'a', 'kind', 'folder'].includes(uploadMatch[1])) {
+        targetFolder = uploadMatch[1];
+      }
+
+      if (phrase.includes('report')) targetQuery = 'report';
+      else if (phrase.includes('assignment')) targetQuery = 'assignment';
+      else if (phrase.includes('mahesh')) targetQuery = 'mahesh';
+      else if (phrase.includes('photo')) targetQuery = 'photo';
+
+      if (targetFolder || targetQuery) {
+        announce(`Searching for PDF in ${targetFolder || 'your computer'}…`, () => {
+          searchAndLoadLocalPdf(targetFolder, targetQuery);
+        });
+      } else {
+        announce('Scanning your folders for PDF documents…', () => {
+          searchAndLoadLocalPdf('', '');
+        });
+      }
       return;
     }
 

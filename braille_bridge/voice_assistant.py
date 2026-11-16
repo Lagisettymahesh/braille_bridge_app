@@ -62,10 +62,26 @@ def cmd_open_website():
     webbrowser.open(SERVER_URL)
 
 
-def cmd_upload_pdf(file_path: Optional[str] = None):
-    """Command: Select and upload a PDF document."""
-    speak("Please select a PDF document to upload.")
+def cmd_upload_pdf(file_path: Optional[str] = None, folder_name: str = '', query: str = ''):
+    """Command: Find and upload a PDF document from a folder or file picker."""
     if not file_path:
+        if folder_name or query:
+            speak(f"Searching for PDF in {folder_name or 'your computer'}...")
+            found = documents.find_local_pdfs(folder_name, query)
+            if found:
+                file_path = found[0]['path']
+                speak(f"Found {found[0]['filename']} in your {found[0]['folder']} folder.")
+            else:
+                speak(f"No PDF found in {folder_name or 'your folders'}. Opening file picker.")
+        else:
+            # Check Desktop first for recent files
+            found = documents.find_local_pdfs('desktop', '')
+            if found:
+                file_path = found[0]['path']
+                speak(f"Found recent document {found[0]['filename']} on Desktop.")
+
+    if not file_path:
+        speak("Please select a PDF document to upload.")
         try:
             import tkinter as tk
             from tkinter import filedialog
@@ -176,8 +192,17 @@ def main():
 
             if "open website" in query or "website" in query or "launch" in query or "start website" in query:
                 cmd_open_website()
-            elif "upload pdf" in query or "open pdf" in query or "pdf" in query or "upload document" in query:
-                cmd_upload_pdf()
+            elif "upload" in query or "pdf" in query or "document" in query or "find pdf" in query:
+                folder = ""
+                q_text = ""
+                if "desktop" in query: folder = "desktop"
+                elif "download" in query: folder = "downloads"
+                elif "document" in query: folder = "documents"
+                elif "capston" in query: folder = "capston"
+                if "report" in query: q_text = "report"
+                elif "assignment" in query: q_text = "assignment"
+                elif "mahesh" in query: q_text = "mahesh"
+                cmd_upload_pdf(folder_name=folder, query=q_text)
             elif "convert" in query:
                 txt = input("Enter text to convert to Braille: ").strip()
                 if txt:

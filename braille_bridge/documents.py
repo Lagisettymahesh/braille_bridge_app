@@ -1,7 +1,8 @@
 """Document processing for Braille Bridge: PDF text extraction and document helpers."""
 import io
 import os
-from typing import Dict, Any
+import glob
+from typing import Dict, Any, List
 from pypdf import PdfReader
 
 
@@ -82,3 +83,107 @@ def extract_pdf_text(
         'is_scanned': is_scanned,
         'method': method
     }
+
+
+def find_local_pdfs(folder_name: str = '', query: str = '', max_results: int = 20) -> List[Dict[str, Any]]:
+    """Search for PDF files on the user's system matching a given folder name and/or search query.
+
+    Handles standard Windows folders, OneDrive redirects, and subdirectories.
+    """
+    home = os.path.expanduser('~')
+    folder_map = {
+        'desktop': [
+            os.path.join(home, 'OneDrive', 'Desktop'),
+            os.path.join(home, 'Desktop'),
+        ],
+        'capston': [
+            os.path.join(home, 'OneDrive', 'Desktop', 'capston'),
+            os.path.join(home, 'Desktop', 'capston'),
+        ],
+        'capstone': [
+            os.path.join(home, 'OneDrive', 'Desktop', 'capston'),
+            os.path.join(home, 'Desktop', 'capston'),
+        ],
+        'downloads': [
+            os.path.join(home, 'Downloads'),
+            os.path.join(home, 'OneDrive', 'Downloads'),
+        ],
+        'download': [
+            os.path.join(home, 'Downloads'),
+            os.path.join(home, 'OneDrive', 'Downloads'),
+        ],
+        'documents': [
+            os.path.join(home, 'OneDrive', 'Documents'),
+            os.path.join(home, 'Documents'),
+        ],
+        'document': [
+            os.path.join(home, 'OneDrive', 'Documents'),
+            os.path.join(home, 'Documents'),
+        ],
+    }
+
+    target_dirs = []
+    f_clean = folder_name.strip().lower()
+
+    if f_clean in folder_map:
+        target_dirs = [d for d in folder_map[f_clean] if os.path.isdir(d)]
+    elif f_clean:
+        # Check subdirectories of common bases
+        bases = [
+            os.path.join(home, 'OneDrive', 'Desktop'),
+            os.path.join(home, 'Downloads'),
+            os.path.join(home, 'OneDrive', 'Documents'),
+            home
+        ]
+        for b in bases:
+            cand = os.path.join(b, folder_name)
+            if os.path.isdir(cand):
+                target_dirs.append(cand)
+            # Case-insensitive match on directory names
+            if os.path.isdir(b):
+                try:
+                    for sub in os.listdir(b):
+                        if sub.lower() == f_clean and os.path.isdir(os.path.join(b, sub)):
+                            target_dirs.append(os.path.join(b, sub))
+                except Exception:
+                    pass
+
+    if not target_dirs:
+        # Default to searching Desktop, Downloads, and Documents
+        for key in ['desktop', 'downloads', 'documents']:
+            target_dirs.extend([d for d in folder_map[key] if os.path.isdir(d)])
+
+    found = []
+    q = query.strip().lower()
+    seen_paths = set()
+
+    for base_dir in target_dirs:
+        for root, dirs, files in os.walk(base_dir):
+            # Avoid node_modules, .git, AppData, etc.
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', 'AppData', '__pycache__')]
+            for f in files:
+                if f.lower().endswith('.pdf'):
+                    if not q or (q in f.lower()):
+                        full_path = os.path.abspath(os.path.join(root, f))
+                        if full_path in seen_paths:
+                            continue
+                        seen_paths.add(full_path)
+                        try:
+                            mtime = os.path.getmtime(full_path)
+                            size = os.path.getsize(full_path)
+                            rel_folder = os.path.basename(os.path.dirname(full_path)) or os.path.basename(base_dir)
+                            found.append({
+                                'path': full_path,
+                                'filename': f,
+                                'folder': rel_folder,
+                                'mtime': mtime,
+                                'size': size
+                            })
+                        except Exception:
+                            pass
+            if len(found) >= max_results * 2:
+                break
+
+    # Sort newest files first
+    found.sort(key=lambda x: x['mtime'], reverse=True)
+    return found[:max_results]

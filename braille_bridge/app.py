@@ -110,6 +110,61 @@ def create_app(db_path=None):
                 pass
         return jsonify(payload)
 
+    @app.route('/api/find-local-pdf', methods=['GET', 'POST'])
+    def find_local_pdf():
+        if request.method == 'POST':
+            d = request.get_json(silent=True) or request.form or {}
+        else:
+            d = request.args or {}
+        folder = str(d.get('folder', ''))
+        query = str(d.get('query', ''))
+        path = str(d.get('path', ''))
+        auto_load = str(d.get('load', '1')).lower() in ('1', 'true', 'yes')
+        lang = str(d.get('lang', 'auto'))
+        grade = d.get('grade', 1)
+
+        if path and os.path.isfile(path) and path.lower().endswith('.pdf'):
+            files = [{'path': path, 'filename': os.path.basename(path), 'folder': os.path.basename(os.path.dirname(path))}]
+        else:
+            files = documents.find_local_pdfs(folder, query)
+
+        if not files:
+            msg = f"No PDF files found{' in folder ' + folder if folder else ''}{' matching ' + query if query else ''}."
+            return jsonify(ok=False, message=msg, found=0, files=[])
+
+        payload = {
+            'ok': True,
+            'found': len(files),
+            'files': files,
+            'folder': folder or 'system',
+            'query': query
+        }
+
+        if auto_load and files:
+            target_file = files[0]
+            try:
+                with open(target_file['path'], 'rb') as f:
+                    content = f.read()
+                res = documents.extract_pdf_text(content)
+                conv = {}
+                if res['text']:
+                    conv = braille.convert_full(res['text'][:MAX_TEXT], lang, int(grade))
+                    conv['brf'] = braille.to_brf(conv['cells'])
+                payload['loaded'] = {
+                    'filename': target_file['filename'],
+                    'path': target_file['path'],
+                    'folder': target_file['folder'],
+                    'text': res['text'],
+                    'chars': res['chars'],
+                    'pages': res['pages'],
+                    'is_scanned': res['is_scanned'],
+                    'conversion': conv
+                }
+            except Exception as e:
+                payload['load_error'] = str(e)
+
+        return jsonify(payload)
+
     # ---------------- learning ----------------
     def uname():
         u = (request.args.get('user') or (request.get_json(silent=True) or {}).get('user') or 'guest').strip()[:40]

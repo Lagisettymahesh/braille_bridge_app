@@ -159,3 +159,36 @@ def test_api_upload_pdf_invalid_extension(client):
     assert r.status_code == 400
 
 
+def test_find_local_pdfs_in_temp(tmp_path):
+    sub = tmp_path / 'my_docs'
+    sub.mkdir()
+    pdf_file = sub / 'test_sample.pdf'
+    from pypdf import PdfWriter
+    w = PdfWriter()
+    w.add_blank_page(width=50, height=50)
+    with open(pdf_file, 'wb') as f:
+        w.write(f)
+
+    # Search directly in the temp directory
+    results = documents.find_local_pdfs(str(sub))
+    assert len(results) >= 1
+    assert any(r['filename'] == 'test_sample.pdf' for r in results)
+
+
+def test_api_find_local_pdf(client, tmp_path):
+    pdf_file = tmp_path / 'doc.pdf'
+    from pypdf import PdfWriter
+    w = PdfWriter()
+    w.add_blank_page(width=50, height=50)
+    with open(pdf_file, 'wb') as f:
+        w.write(f)
+
+    r = client.get(f'/api/find-local-pdf?path={pdf_file}&load=1')
+    assert r.status_code == 200
+    res = r.get_json()
+    assert res['ok'] is True
+    assert res['found'] == 1
+    assert 'loaded' in res
+
+
+
