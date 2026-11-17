@@ -135,8 +135,26 @@ async function handlePdfUpload(f) {
   fd.append('convert', '1');
   fd.append('lang', $('#lang').value);
   fd.append('grade', $('#grade').value);
+  const pageRange = ($('#pdf-page-range') && $('#pdf-page-range').value) || 'all';
+  fd.append('page_range', pageRange);
+  fd.append('ocr_lang', ($('#ocr-lang') && $('#ocr-lang').value) || 'eng');
+
   try {
     const r = await api('/api/upload-pdf', { method: 'POST', body: fd });
+    const warnEl = $('#doc-warning');
+    if (warnEl) {
+      if (r.warning) {
+        warnEl.textContent = '⚠️ ' + r.warning;
+        warnEl.hidden = false;
+      } else {
+        warnEl.hidden = true;
+      }
+    }
+    const statsEl = $('#doc-stats');
+    if (statsEl) {
+      statsEl.textContent = `📄 ${r.filename}: ${r.chars} chars across ${r.pages} of ${r.total_pages} page(s) · Method: ${r.method}`;
+    }
+
     if (!r.text && r.is_scanned) {
       const w = `Scanned PDF detected (${r.pages} page(s)). No digital text could be extracted.`;
       setStatus(w, 'bad');
@@ -455,7 +473,55 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 2. Open Website / Home
+    // 2. Stop Speaking / Silence
+    if (phrase.includes('stop speaking') || phrase.includes('stop speech') || phrase.includes('quiet') ||
+        phrase.includes('silence') || phrase.includes('shut up') || phrase === 'stop') {
+      speechSynthesis.cancel();
+      state.isSpeaking = false;
+      if (statusText) statusText.textContent = 'Speech paused. Listening for commands…';
+      startListening();
+      return;
+    }
+
+    // 3. Repeat Instruction
+    if (phrase.includes('repeat') || phrase.includes('again') || phrase.includes('what did you say')) {
+      const greeting = getGreeting();
+      announce(`${greeting} Welcome to Braille Bridge. You can say: Upload PDF, Upload from Desktop, Convert to Braille, Test Dots, Read Aloud, or Help.`);
+      return;
+    }
+
+    // 4. Hardware Self Test / Dot Test
+    if (phrase.includes('test dot') || phrase.includes('hardware test') || phrase.includes('test hardware') || phrase.includes('check cell')) {
+      showTab('device');
+      announce('Running 6-dot hardware diagnostic self-test.', () => {
+        runHardwareTest();
+      });
+      return;
+    }
+
+    // 5. Player Controls: Next, Back, Play, Pause
+    if (phrase.includes('next cell') || phrase === 'next' || phrase === 'forward') {
+      $('#p-next').click();
+      announce('Next cell: ' + $('#cur').textContent);
+      return;
+    }
+    if (phrase.includes('previous cell') || phrase === 'previous' || phrase === 'back') {
+      $('#p-prev').click();
+      announce('Previous cell: ' + $('#cur').textContent);
+      return;
+    }
+    if (phrase.includes('play braille') || phrase === 'play' || phrase === 'start player') {
+      $('#p-play').click();
+      announce('Playing Braille stream.');
+      return;
+    }
+    if (phrase.includes('pause braille') || phrase === 'pause' || phrase === 'pause player') {
+      stopPlay();
+      announce('Paused Braille player.');
+      return;
+    }
+
+    // 6. Open Website / Home
     if (phrase.includes('open website') || phrase.includes('website') || phrase.includes('open home') ||
         phrase.includes('go home') || phrase.includes('home page') || phrase.includes('open convert') ||
         phrase.includes('braille bridge') || phrase.includes('main page')) {
@@ -464,21 +530,21 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 3. Learn Tab
+    // 7. Learn Tab
     if (phrase.includes('open learn') || phrase.includes('learn') || phrase.includes('quiz') || phrase.includes('practice') || phrase.includes('study')) {
       showTab('learn');
       announce('Opening Braille Learning Center.');
       return;
     }
 
-    // 4. Device Tab
+    // 8. Device Tab
     if (phrase.includes('open device') || phrase.includes('device') || phrase.includes('hardware') || phrase.includes('simulator')) {
       showTab('device');
       announce('Opening Hardware Device and Tactile Simulator.');
       return;
     }
 
-    // 5. Convert Normal Text to Braille Text
+    // 9. Convert Normal Text to Braille Text
     if (phrase.includes('convert') || phrase.includes('translate') || phrase.includes('to braille') || phrase.includes('make braille')) {
       showTab('convert');
       if (!$('#text').value.trim()) {
@@ -491,7 +557,7 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 6. Read Aloud
+    // 10. Read Aloud
     if (phrase === 'yes' || phrase === 'sure' || phrase === 'yeah' || phrase.includes('yes read') ||
         phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') ||
         phrase.includes('speak') || phrase.includes('read this') || phrase.includes('read it')) {
@@ -504,20 +570,20 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 7. Clear
+    // 11. Clear
     if (phrase.includes('clear') || phrase.includes('reset') || phrase.includes('erase')) {
       $('#text').value = '';
       announce('Text cleared.');
       return;
     }
 
-    // 8. Help
+    // 12. Help
     if (phrase.includes('help') || phrase.includes('command') || phrase.includes('what can you do') || phrase.includes('options')) {
-      announce('You can say: Upload PDF, Open website, Convert, Read aloud, Open learn, Open device, or Clear.');
+      announce('You can say: Upload PDF, Upload from Desktop, Convert, Stop speaking, Test dots, Next cell, Play, Read aloud, or Clear.');
       return;
     }
 
-    // 9. Dictate / Type explicitly
+    // 13. Dictate / Type explicitly
     if (phrase.startsWith('type ') || phrase.startsWith('write ') || phrase.startsWith('dictate ')) {
       const dictatedText = phrase.replace(/^(type|write|dictate)\s+/, '').trim();
       if (dictatedText) {
@@ -572,21 +638,15 @@ $('#file').addEventListener('change', async e => {
     const greeting = getGreeting();
     const promptMessage = `${greeting} Welcome to Braille Bridge. What file do you want to upload, and what file do you want to convert?`;
 
-    if (statusText) statusText.textContent = 'Voice Assistant Active (Automated)';
+    if (statusText) statusText.textContent = 'Voice Assistant Active · Listening for commands…';
     if (transcriptEl) transcriptEl.innerHTML = `<strong>${promptMessage}</strong>`;
 
     speak(promptMessage, 'en-IN', () => {
-      if (statusText) statusText.textContent = 'Opening file selector to upload…';
-      setTimeout(() => {
-        try {
-          if ($('#pdf-file')) $('#pdf-file').click();
-        } catch(e) {}
-        startListening();
-      }, 400);
+      startListening();
     });
   }
 
-  // Automatically start as soon as website opens
+  // Automatically greet when website opens without intrusive popup
   setTimeout(autoWelcomeAndAsk, 600);
 
   // Fallback for browsers with strict gesture policy: any touch, click or keypress unlocks audio & file picker
@@ -651,26 +711,55 @@ $('#p-prev').onclick = () => { stopPlay(); showCell(state.idx - 1); };
 /* ---------- learn ---------- */
 const mode = () => document.querySelector('input[name=mode]:checked').value;
 const user = () => ($('#user').value.trim() || 'guest');
+state.revisionOnly = false;
+
 async function refreshSets() {
   try {
-    const sets = await api('/api/sets?user=' + encodeURIComponent(user()));
+    const u = encodeURIComponent(user());
+    const sets = await api('/api/sets?user=' + u);
     const sel = $('#set'), cur = sel.value;
-    sel.replaceChildren(...sets.map(s => el('option', { value: s.id }, `${s.title} (${Math.round(s.mastery * 100)}%)`)));
-    if (cur) sel.value = cur;
+    sel.replaceChildren(...sets.map(s => el('option', { value: s.id }, `[${s.level}] ${s.title} (${Math.round(s.mastery * 100)}%)`)));
+    if (cur && sets.some(x => x.id === cur)) sel.value = cur;
     const s = sets.find(x => x.id === sel.value) || sets[0];
     $('#meter-bar').style.width = Math.round(s.mastery * 100) + '%';
     $('#meter-txt').textContent = `Mastered ${Math.round(s.mastery * s.items)} of ${s.items} characters.`;
-    $('#prog').replaceChildren(...sets.map(x => el('tr', {}, el('td', {}, x.title), el('td', {}, Math.round(x.mastery * 100) + '%'),
-      el('td', {}, String(x.attempts)), el('td', {}, x.attempts ? Math.round(100 * x.correct / x.attempts) + '%' : '—'))));
+
+    const totalRev = sets.reduce((acc, curr) => acc + (curr.revision_count || 0), 0);
+    const badgeEl = $('#rev-badge');
+    if (badgeEl) badgeEl.textContent = totalRev;
+
+    // Load stats
+    try {
+      const stats = await api('/api/learning/stats?user=' + u);
+      const stEl = $('#stats-summary');
+      if (stEl) {
+        stEl.textContent = `${stats.total_attempts} attempts · ${stats.accuracy}% accuracy · ${stats.mastered_items} characters mastered`;
+      }
+    } catch (e) {}
+
+    $('#prog').replaceChildren(...sets.map(x => el('tr', {},
+      el('td', {}, `[${x.level}] ${x.title}`),
+      el('td', {}, Math.round(x.mastery * 100) + '%'),
+      el('td', {}, String(x.attempts)),
+      el('td', {}, x.attempts ? Math.round(100 * x.correct / x.attempts) + '%' : '—')
+    )));
   } catch (e) { setStatus(e.message, 'bad'); }
 }
+
 async function nextQuestion() {
   const q = $('#quiz'); state.answered = false; state.editCell = 0;
   try {
-    const d = await api(`/api/quiz/next?user=${encodeURIComponent(user())}&set=${$('#set').value || 'en-letters'}&mode=${mode()}` +
+    const revParam = state.revisionOnly ? '&revision=true' : '';
+    const d = await api(`/api/quiz/next?user=${encodeURIComponent(user())}&set=${$('#set').value || 'en-beginner'}&mode=${mode()}${revParam}` +
       (state.quiz ? '&last=' + encodeURIComponent(state.quiz.item) : ''));
     state.quiz = d; q.replaceChildren();
     const fb = el('p', { className: 'feedback', id: 'fb' });
+
+    if (state.revisionOnly) {
+      q.append(el('div', { style: 'background:#fee2e2; color:#991b1b; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem; font-weight:600; margin-bottom:0.6rem;' },
+        '🔁 Revision Mode: Practicing previously missed item'));
+    }
+
     if (d.mode === 'read') {
       q.append(el('h2', {}, 'Which character is this cell?'), el('div', { className: 'big', id: 'qcell' }));
       $('#qcell').append(cellSVG(d.cell, 110, { numbers: true }));
@@ -726,8 +815,15 @@ async function sendOne(cell) {
   try { await post('/api/device/send', { port: $('#port').value, cells: [cell], delay: 0.5 }); setStatus('Sent to the Braille cell.', 'ok'); }
   catch (e) { setStatus(e.message, 'bad'); }
 }
-$('#set').onchange = () => { state.quiz = null; nextQuestion(); };
-$('#user').onchange = () => { state.quiz = null; refreshSets(); nextQuestion(); };
+if ($('#btn-revise')) {
+  $('#btn-revise').onclick = () => {
+    state.revisionOnly = true;
+    state.quiz = null;
+    nextQuestion();
+  };
+}
+$('#set').onchange = () => { state.revisionOnly = false; state.quiz = null; nextQuestion(); };
+$('#user').onchange = () => { state.revisionOnly = false; state.quiz = null; refreshSets(); nextQuestion(); };
 document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = () => { state.quiz = null; nextQuestion(); });
 $('#btn-reset').onclick = async () => { if (confirm('Delete all saved progress for "' + user() + '"?')) { await post('/api/progress/reset', { user: user() }); state.quiz = null; refreshSets(); nextQuestion(); } };
 document.addEventListener('keydown', e => {
@@ -855,6 +951,30 @@ $('#btn-dev-send').onclick = async () => {
   } catch (e) { setStatus(e.message, 'bad'); }
 };
 $('#btn-dev-stop').onclick = () => post('/api/device/stop', {}).catch(() => {});
+
+async function runHardwareTest() {
+  const p = $('#port') ? $('#port').value : 'VIRTUAL';
+  setStatus('Starting 6-dot hardware diagnostic self-test…', 'ok');
+  try {
+    await post('/api/device/test', { port: p });
+    watch();
+  } catch (e) {
+    setStatus('Hardware test error: ' + e.message, 'bad');
+  }
+}
+if ($('#btn-dev-test')) $('#btn-dev-test').onclick = runHardwareTest;
+
+// Interactive dot click on mechanical simulator grid
+document.querySelectorAll('#tactile-grid .tactile-pin').forEach(pin => {
+  pin.style.cursor = 'pointer';
+  pin.addEventListener('click', () => {
+    const dotNum = parseInt(pin.dataset.dot, 10);
+    if (dotNum >= 1 && dotNum <= 6) {
+      const bit = 1 << (dotNum - 1);
+      setTestDots(state.testCell ^ bit);
+    }
+  });
+});
 $('#btn-test-send').onclick = async () => {
   try {
     await post('/api/device/send', { port: $('#port').value, cells: [state.testCell], delay: 0.5 });

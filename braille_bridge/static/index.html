@@ -41,8 +41,10 @@
       <button type="button" class="va-chip" data-cmd="upload pdf from desktop">🖥️ PDF from Desktop</button>
       <button type="button" class="va-chip" data-cmd="upload pdf from downloads">📥 PDF from Downloads</button>
       <button type="button" class="va-chip" data-cmd="convert">⚡ Convert</button>
+      <button type="button" class="va-chip" data-cmd="stop speaking">⏹️ Stop Speaking</button>
+      <button type="button" class="va-chip" data-cmd="test dots">🧪 Test Dots</button>
       <button type="button" class="va-chip" data-cmd="read aloud">🔊 Read aloud</button>
-      <button type="button" class="va-chip" data-cmd="clear">🧹 Clear</button>
+      <button type="button" class="va-chip" data-cmd="repeat instruction">🔁 Repeat</button>
       <button type="button" class="va-chip" data-cmd="help">❓ Help</button>
     </div>
   </div>
@@ -84,12 +86,18 @@
           <label for="ocr-lang">Page language (for OCR)</label>
           <select id="ocr-lang"><option value="eng">English</option><option value="hin">Hindi</option><option value="eng+hin">English + Hindi</option></select>
         </div>
-        <div style="display:flex; align-items:flex-end;">
-          <button type="button" id="btn-quick-pdf" style="width:100%; min-height:42px;">
-            📄 Select PDF File
-          </button>
+        <div>
+          <label for="pdf-page-range">Pages to extract</label>
+          <input id="pdf-page-range" value="all" placeholder="e.g. 1-3, 5 or all" style="padding:0.45rem;">
         </div>
       </div>
+      <div class="row" style="margin-top:0.4rem;">
+        <button type="button" id="btn-quick-pdf" style="width:100%; min-height:42px;">
+          📄 Select PDF Document
+        </button>
+      </div>
+      <div id="doc-warning" class="warn" hidden style="margin-top:0.5rem;"></div>
+      <div id="doc-stats" style="font-size:0.85rem; color:var(--muted); margin-top:0.3rem;"></div>
       <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.6rem; align-items:center;">
         <span style="font-size:0.85rem; font-weight:600; color:var(--muted);">Scan folder for PDF:</span>
         <button type="button" class="va-chip" id="btn-quick-desktop">🖥️ Desktop</button>
@@ -154,16 +162,27 @@
       <h2>Practice</h2>
       <div class="row">
         <div><label for="user">Your name</label><input id="user" value="guest" maxlength="40" autocomplete="off"></div>
-        <div><label for="set">Lesson</label><select id="set"></select></div>
+        <div>
+          <label for="set">Curriculum / Lesson</label>
+          <select id="set"></select>
+        </div>
       </div>
-      <fieldset><legend>Mode</legend>
+      <div class="row" style="margin-top:0.3rem;">
+        <button type="button" id="btn-revise" class="btn-preset" style="width:100%; background:var(--brand-ink); color:white; padding:0.4rem; font-weight:600;">
+          🔁 Revise Mistakes (<span id="rev-badge">0</span> unmastered)
+        </button>
+      </div>
+      <fieldset style="margin-top:0.5rem;"><legend>Mode</legend>
         <label class="check"><input type="radio" name="mode" value="read" checked> Read: see the cell, choose the character</label>
         <label class="check"><input type="radio" name="mode" value="write"> Write: see the character, set the dots</label>
       </fieldset>
       <label class="check"><input type="checkbox" id="speak-on" checked> Speak characters aloud</label>
       <div class="meter" aria-label="Mastery"><div id="meter-bar"></div></div>
       <p class="hint" id="meter-txt"></p>
-      <div class="actions"><button id="btn-reset">Reset my progress</button></div>
+      <div id="learning-stats-box" style="margin-top:0.6rem; padding:0.6rem; background:rgba(0,0,0,0.03); border-radius:6px; font-size:0.85rem;">
+        <strong>Daily Statistics:</strong> <span id="stats-summary">0 attempts today · 0% accuracy</span>
+      </div>
+      <div class="actions" style="margin-top:0.6rem;"><button id="btn-reset">Reset my progress</button></div>
     </div>
     <div class="card quiz" aria-live="polite">
       <div id="quiz"></div>
@@ -189,7 +208,11 @@
       <p class="hint" id="dev-note"></p>
       <div class="meter"><div id="dev-bar"></div></div>
       <p class="hint" id="dev-status">Idle.</p>
-      <div class="actions"><button class="primary" id="btn-dev-send">Send current Braille</button><button id="btn-dev-stop">Stop</button></div>
+      <div class="actions">
+        <button class="primary" id="btn-dev-send">Send current Braille</button>
+        <button id="btn-dev-test">🧪 Run 6-Dot Self Test</button>
+        <button id="btn-dev-stop">Stop</button>
+      </div>
     </div>
     <div class="card">
       <h2>Test a pattern</h2>
