@@ -55,21 +55,38 @@
       <strong id="va-status-text">🎙️ Voice Assistant Active · Listening for commands…</strong>
     </div>
     <p id="va-transcript" class="va-transcript">Hello and good morning! What file do you want to upload, and what file do you want to convert?</p>
+    
+    <!-- Confirmation Dialog Area (Voice or Touch) -->
+    <div id="va-confirm-box" class="va-confirm-banner" hidden>
+      <span id="va-confirm-prompt" class="va-confirm-text">You selected document. Shall I upload it?</span>
+      <div class="va-confirm-actions">
+        <button type="button" class="primary" id="btn-va-confirm-yes">✔️ Yes, Upload</button>
+        <button type="button" id="btn-va-confirm-no">❌ Cancel</button>
+      </div>
+    </div>
+
+    <!-- Active Candidates Area -->
+    <div id="va-candidates-area" style="margin: 0.5rem 0;" hidden>
+      <div id="va-candidates-header" style="font-size:0.85rem; font-weight:700; color:var(--text-muted); margin-bottom:0.35rem;">Available Files:</div>
+      <div id="va-candidates-chips" style="display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
+    </div>
+
     <div class="va-chips">
-      <button type="button" class="va-chip" data-cmd="open website">🌐 Open website</button>
-      <button type="button" class="va-chip" data-cmd="upload pdf">📄 Upload PDF</button>
-      <button type="button" class="va-chip" data-cmd="upload pdf from desktop">🖥️ PDF from Desktop</button>
-      <button type="button" class="va-chip" data-cmd="upload pdf from downloads">📥 PDF from Downloads</button>
+      <button type="button" class="va-chip" data-cmd="open documents">📁 Documents</button>
+      <button type="button" class="va-chip" data-cmd="open downloads">📥 Downloads</button>
+      <button type="button" class="va-chip" data-cmd="open desktop">🖥️ Desktop</button>
+      <button type="button" class="va-chip" data-cmd="find project pdf">🔍 Find Project PDF</button>
+      <button type="button" class="va-chip" data-cmd="repeat">🔁 Repeat Files</button>
+      <button type="button" class="va-chip" data-cmd="go back">🔙 Go Back</button>
       <button type="button" class="va-chip" data-cmd="convert">⚡ Convert</button>
       <button type="button" class="va-chip" data-cmd="stop speaking">⏹️ Stop Speaking</button>
       <button type="button" class="va-chip" data-cmd="test dots">🧪 Test Dots</button>
-      <button type="button" class="va-chip" data-cmd="read aloud">🔊 Read aloud</button>
-      <button type="button" class="va-chip" data-cmd="repeat instruction">🔁 Repeat</button>
       <button type="button" class="va-chip" data-cmd="help">❓ Help</button>
     </div>
   </div>
   <button id="va-close" class="va-close" type="button" aria-label="Close Voice Assistant">&times;</button>
 </div>
+<div id="va-aria-live" aria-live="polite" class="sr-only"></div>
 
 <!-- ==================== MAIN CONTENT AREA ==================== -->
 <main id="main">
@@ -454,6 +471,57 @@
       <div class="actions" style="margin-top:1rem;">
         <button class="primary" id="btn-convert-pdf-text" disabled>⚡ Convert Extracted Text to Braille</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Voice-Controlled File Navigator Card -->
+  <div class="card" style="margin-top:1.5rem;" id="voice-file-explorer-card">
+    <div class="card-header">
+      <h2><span>🎙️ Independent Voice-Controlled File Navigator</span></h2>
+      <span class="hint">Hands-free file discovery, selection & upload for blind users</span>
+    </div>
+
+    <div class="va-breadcrumbs" id="fe-breadcrumbs">
+      <span>Location:</span>
+      <span class="active" id="fe-current-folder">Documents</span>
+    </div>
+
+    <!-- Folder Navigation Controls -->
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:1rem;">
+      <button type="button" class="va-chip" id="fe-btn-documents">📁 Documents</button>
+      <button type="button" class="va-chip" id="fe-btn-downloads">📥 Downloads</button>
+      <button type="button" class="va-chip" id="fe-btn-desktop">🖥️ Desktop</button>
+      <button type="button" class="va-chip" id="fe-btn-capstone">📁 Capstone</button>
+      <button type="button" class="va-chip" id="fe-btn-back" disabled>🔙 Go Back</button>
+      <button type="button" class="va-chip" id="fe-btn-repeat">🔁 Repeat Aloud</button>
+    </div>
+
+    <!-- Search Input for Voice/Manual -->
+    <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+      <input type="text" id="fe-search-input" placeholder="Search files by name (e.g. project, report, assignment)..." style="flex:1;">
+      <button type="button" class="primary" id="fe-btn-search">Search</button>
+      <button type="button" class="btn-preset" id="fe-btn-voice-search" title="Search using voice">🎙️ Voice</button>
+    </div>
+
+    <!-- Confirmation Area -->
+    <div id="fe-confirm-box" class="va-confirm-banner" hidden>
+      <span id="fe-confirm-prompt" class="va-confirm-text">You selected document. Shall I upload it?</span>
+      <div class="va-confirm-actions">
+        <button type="button" class="primary" id="btn-fe-confirm-yes">✔️ Yes, Upload & Convert</button>
+        <button type="button" id="btn-fe-confirm-no">❌ Cancel</button>
+      </div>
+    </div>
+
+    <!-- Files Container -->
+    <div id="fe-file-list" class="va-file-grid" aria-label="Available documents">
+      <p class="hint" style="grid-column: 1/-1;">Click a folder above or say "Open Documents", "Open Downloads", or "Find my project PDF" to browse files.</p>
+    </div>
+
+    <!-- Pagination -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem;" id="fe-pagination" hidden>
+      <button type="button" id="fe-btn-prev-page">⏮️ Previous Page</button>
+      <span id="fe-page-info" class="hint" style="font-weight:600;">Page 1 of 1</span>
+      <button type="button" id="fe-btn-next-page">Next Page ⏭️</button>
     </div>
   </div>
 </section>

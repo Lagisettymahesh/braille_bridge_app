@@ -292,7 +292,11 @@ def build_pdf(filename="Braille_Bridge_Project_Summary.pdf"):
         [Paragraph("<code>POST /api/convert</code>", code_style), Paragraph("<code>{text, lang, grade}</code>", code_style), Paragraph("Converts plain text to Unicode Braille, cell arrays, ASCII Braille, and BRF output format.", tbl_cell)],
         [Paragraph("<code>POST /api/decode</code>", code_style), Paragraph("<code>{braille, cells, lang}</code>", code_style), Paragraph("Reverse decodes Unicode or ASCII Braille back to readable English or Hindi text.", tbl_cell)],
         [Paragraph("<code>POST /api/upload-pdf</code>", code_style), Paragraph("Multipart: <code>pdf, page_range, lang</code>", code_style), Paragraph("Extracts selected page ranges from PDF, applies OCR fallback if scanned, and auto-converts.", tbl_cell)],
-        [Paragraph("<code>GET /api/find-local-pdf</code>", code_style), Paragraph("<code>folder, query, page_range</code>", code_style), Paragraph("Crawls Desktop, Downloads, or Documents for matching PDFs, auto-loads top match.", tbl_cell)],
+        [Paragraph("<code>GET /api/files/permitted-folders</code>", code_style), Paragraph("None", code_style), Paragraph("Lists authorized user root directories (Documents, Downloads, Desktop, Capstone) for blind navigation.", tbl_cell)],
+        [Paragraph("<code>GET /api/files/browse</code>", code_style), Paragraph("<code>folder, subpath, page</code>", code_style), Paragraph("Lists documents in permitted folder with 1-based numbering and natural spoken summary for TTS.", tbl_cell)],
+        [Paragraph("<code>GET /api/files/search</code>", code_style), Paragraph("<code>query, folder, limit</code>", code_style), Paragraph("Fuzzy searches files by name across permitted folders, formatted with speech-ready candidate list.", tbl_cell)],
+        [Paragraph("<code>POST /api/files/resolve-selection</code>", code_style), Paragraph("<code>{phrase, files}</code>", code_style), Paragraph("Parses voice ordinals ('second one', 'number 2') to resolve target file and generates confirm prompt.", tbl_cell)],
+        [Paragraph("<code>POST /api/files/load</code>", code_style), Paragraph("<code>{path, lang, grade}</code>", code_style), Paragraph("Loads permitted document, extracts text/OCR, auto-converts to Braille, and returns speech summary.", tbl_cell)],
         [Paragraph("<code>POST /api/ocr</code>", code_style), Paragraph("Multipart: <code>image, ocr_lang</code>", code_style), Paragraph("Performs OCR on photographed book pages via Windows Media OCR or Tesseract.", tbl_cell)],
         [Paragraph("<code>GET /api/quiz/next</code>", code_style), Paragraph("<code>set, mode, revision, user</code>", code_style), Paragraph("Fetches next Leitner quiz item. Supports revision=true to isolate missed Box 0 items.", tbl_cell)],
         [Paragraph("<code>POST /api/quiz/answer</code>", code_style), Paragraph("<code>{set, mode, item, choice}</code>", code_style), Paragraph("Records answer in SQLite, promotes/demotes box, and updates daily statistics.", tbl_cell)],
@@ -307,18 +311,49 @@ def build_pdf(filename="Braille_Bridge_Project_Summary.pdf"):
         ('BOX', (0,0), (-1,-1), 0.8, c_card_border),
         ('INNERGRID', (0,0), (-1,-1), 0.4, c_card_border),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, c_bg_light]),
-        ('TOPPADDING', (0,0), (-1,-1), 2.8),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 2.8),
+        ('TOPPADDING', (0,0), (-1,-1), 2.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
         ('LEFTPADDING', (0,0), (-1,-1), 4),
         ('RIGHTPADDING', (0,0), (-1,-1), 4),
     ]))
     story.append(t_api)
     story.append(Spacer(1, 8))
 
-    # Verification & Testing Report
-    story.append(Paragraph("5. Quality Assurance & Automated Testing Report (55/55 Passed)", h1_style))
+    # Independent Voice-Controlled File Management Architecture
+    story.append(Paragraph("5. Independent Voice-Controlled File Management Architecture", h1_style))
     story.append(Paragraph(
-        "The project has undergone comprehensive automated testing with <b>55 passing unit and integration tests</b> executed via <code>pytest</code> in <b>1.59 seconds</b> with zero failures:",
+        "For blind and visually impaired users, independent document discovery and upload is a critical accessibility requirement. "
+        "Standard web browsers prohibit unprompted scanning of the OS filesystem due to sandbox restrictions. "
+        "Braille Bridge overcomes this limitation by integrating the frontend Web Speech API with an authorized local Python microservice backend and standalone desktop companion:",
+        body_style
+    ))
+
+    voice_flow_data = [
+        [Paragraph("Step & Role", tbl_header), Paragraph("Voice Dialog Example", tbl_header), Paragraph("System Action & Accessibility Safeguard", tbl_header)],
+        [Paragraph("<b>1. Discovery</b><br/>User Intent", tbl_cell), Paragraph("User: <i>\"Find my project PDF.\"</i><br/>(or <i>\"Open Documents\"</i>)", tbl_cell), Paragraph("Backend queries authorized roots (Documents, Downloads, Desktop, Capstone). Identifies matching PDF/TXT files and structures numbered candidate list.", tbl_cell)],
+        [Paragraph("<b>2. Spoken List</b><br/>Assistant Feedback", tbl_cell), Paragraph("Assistant: <i>\"I found three matching files: Number 1: Project.pdf. Number 2: Project Final.pdf. Number 3: Project Report.pdf. Which one would you like?\"</i>", tbl_cell), Paragraph("TTS speaks filenames aloud one by one with ordinal numbers. Visual card highlights entries for sighted peers; ARIA live region notifies screen readers.", tbl_cell)],
+        [Paragraph("<b>3. Selection</b><br/>User Ordinal", tbl_cell), Paragraph("User: <i>\"Select the second one.\"</i><br/>(or <i>\"Number two\"</i> / <i>\"Select Project Final\"</i>)", tbl_cell), Paragraph("Natural language resolver parses ordinals ('first'..'tenth', 'last', numbers, or filename tokens) to safely target index 1.", tbl_cell)],
+        [Paragraph("<b>4. Confirmation</b><br/>User Consent", tbl_cell), Paragraph("Assistant: <i>\"You selected Project Final.pdf. Shall I upload it?\"</i><br/>User: <i>\"Yes.\"</i>", tbl_cell), Paragraph("Strict consent gate: never uploads without explicit confirmation. If user says 'No' or 'Cancel', returns to file list without changes.", tbl_cell)],
+        [Paragraph("<b>5. Auto-Process</b><br/>Execution & Feedback", tbl_cell), Paragraph("Assistant: <i>\"Uploading and processing Project Final.pdf...\"</i> &rarr; <i>\"Successfully processed Project Final.pdf. Extracted 1,415 characters across 5 pages, converted into 1,532 Braille cells.\"</i>", tbl_cell), Paragraph("Extracts text, applies OCR fallback if scanned, translates to UEB Grade 1/2 or Bharati Braille, streams to tactile display/simulator, and speaks final status.", tbl_cell)],
+    ]
+    t_vflow = Table(voice_flow_data, colWidths=[110, 194, 200])
+    t_vflow.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), c_brand),
+        ('BOX', (0,0), (-1,-1), 0.8, c_card_border),
+        ('INNERGRID', (0,0), (-1,-1), 0.4, c_card_border),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, c_bg_light]),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 4),
+        ('RIGHTPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t_vflow)
+    story.append(Spacer(1, 8))
+
+    # Verification & Testing Report
+    story.append(Paragraph("6. Quality Assurance & Automated Testing Report (61/61 Passed)", h1_style))
+    story.append(Paragraph(
+        "The project has undergone comprehensive automated testing with <b>61 passing unit and integration tests</b> executed via <code>pytest</code> in <b>2.07 seconds</b> with zero failures:",
         body_style
     ))
 
@@ -331,6 +366,7 @@ def build_pdf(filename="Braille_Bridge_Project_Summary.pdf"):
         [Paragraph("Leitner Learning Module", tbl_cell), Paragraph("6", tbl_cell), Paragraph("6 tiered curricula, SQLite persistence, Box 0-2 transitions, daily statistics tracking, revision mode filtering for unmastered items, reset logic.", tbl_cell), Paragraph("100% (6/6)", tbl_cell)],
         [Paragraph("Hardware Controller & Simulator", tbl_cell), Paragraph("5", tbl_cell), Paragraph("COM port enumeration, ping handshake, background thread streaming, 6-dot sweep test mode, stop command.", tbl_cell), Paragraph("100% (5/5)", tbl_cell)],
         [Paragraph("Flask REST API Endpoints", tbl_cell), Paragraph("13", tbl_cell), Paragraph("Health check, convert (valid/invalid grade/lang), decode, PDF upload with magic byte verification (%PDF-), page range upload, quiz next/answer, stats, ping, test.", tbl_cell), Paragraph("100% (13/13)", tbl_cell)],
+        [Paragraph("Voice File Navigation & Ordinals", tbl_cell), Paragraph("6", tbl_cell), Paragraph("Permitted roots security, Windows system directory protection, ordinal voice resolution ('second one', 'number 2'), browse folder, file load/auto-convert, end-to-end conversation.", tbl_cell), Paragraph("100% (6/6)", tbl_cell)],
         [Paragraph("Performance & Benchmarks", tbl_cell), Paragraph("1", tbl_cell), Paragraph("5,000 character UEB translation latency benchmark (Executed in 18.4ms vs 100ms budget).", tbl_cell), Paragraph("100% (1/1)", tbl_cell)],
     ]
     t_test = Table(test_summary_data, colWidths=[130, 40, 264, 70])
@@ -347,12 +383,13 @@ def build_pdf(filename="Braille_Bridge_Project_Summary.pdf"):
     story.append(t_test)
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("6. Conclusion & Practical Impact", h1_style))
+    story.append(Paragraph("7. Conclusion & Practical Impact", h1_style))
     story.append(Paragraph(
         "<b>Braille Bridge</b> proves that accessible, assistive educational technologies can be developed cleanly, reliably, and affordably without requiring prohibitive multi-thousand-dollar hardware. "
         "By synthesizing standard web technologies, lightweight local Python microservices, dual-engine OCR, and accessible voice interaction, the system delivers an end-to-end tactile learning tool suitable for academic excellence and real-world deployment.",
         body_style
     ))
+
 
     doc.build(story, canvasmaker=NumberedCanvas)
     print(f"✅ PDF successfully generated at: {os.path.abspath(filename)}")

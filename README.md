@@ -1,6 +1,6 @@
 # BRAILLE BRIDGE: Automated Text-to-Braille System & Hardware Interface
 
-[![Test Suite](https://img.shields.io/badge/Automated%20Tests-55%20Passed-brightgreen)](tests/test_all.py)
+[![Test Suite](https://img.shields.io/badge/Automated%20Tests-61%20Passed-brightgreen)](tests/test_all.py)
 [![Python Version](https://img.shields.io/badge/Python-3.10%20|%203.11%20|%203.12%20|%203.13-blue)](https://python.org)
 [![Framework](https://img.shields.io/badge/Backend-Flask%203.0-orange)](https://flask.palletsprojects.com/)
 [![Accessibility](https://img.shields.io/badge/Accessibility-WCAG%202.1%20AA-success)](https://www.w3.org/WAI/standards-guidelines/wcag/)
@@ -273,10 +273,47 @@ python -m pytest braille_bridge/tests -v
 | 53 | `test_api_device_test_and_stop` | API | Triggers self-test and stop endpoints via HTTP | Match | **PASSED** |
 | 54 | `test_api_device_ping` | API | Validates hardware connection test endpoint | Match | **PASSED** |
 | 55 | `test_performance_conversion_benchmark`| Benchmark| 5,000 character UEB translation latency < 100ms | 18.4 ms | **PASSED** |
+| 56 | `test_permitted_roots_and_security` | Security | Windows system directory blocked; authorized user roots allowed | Match | **PASSED** |
+| 57 | `test_ordinal_selection_resolution` | Voice | Resolves 'second one', 'number 2', 'first', 'last', and partial names | Match | **PASSED** |
+| 58 | `test_browse_folder_and_summary` | Voice | Browses directory, formats speech summary with 1-based IDs | Match | **PASSED** |
+| 59 | `test_process_selected_file_and_conversion` | Engine | Loads permitted document, extracts text and auto-converts to Braille | Match | **PASSED** |
+| 60 | `test_api_files_endpoints` | API | Validates `/api/files/browse`, `/search`, `/resolve-selection`, `/load` | Match | **PASSED** |
+| 61 | `test_end_to_end_conversational_file_flow` | E2E | Verifies complete conversational flow: search -> ordinal select -> confirm -> convert | Match | **PASSED** |
 
 ---
 
-## 8. Installation & Quick Start
+## 8. Independent Voice-Controlled File Management & Discovery
+
+For visually impaired and blind users, independent document discovery, selection, and upload is the single most essential capability. Braille Bridge provides an autonomous, multi-turn conversational voice file manager that operates completely hands-free:
+
+### Conversational Architecture & Dialog Flow
+1. **Initiation**: The assistant greets the user upon load:
+   > *"Hello and good morning! Welcome to Braille Bridge. Which file would you like to convert? You can say: Find my project PDF, or open Documents, Downloads, or Desktop."*
+2. **Hands-Free Discovery**: The user speaks natural search or folder navigation queries:
+   > *User: "Find my project PDF"* (or *"Open Documents"*, *"Open Downloads"*)
+3. **Speech-Synthesized Listing**: The assistant indexes matching documents and reads them aloud sequentially:
+   > *Assistant: "I found three matching files: Number 1: Project.pdf. Number 2: Project Final.pdf. Number 3: Project Report.pdf. Which one would you like?"*
+4. **Natural Ordinal Selection**: The user selects the file using ordinary speech:
+   > *User: "Select the second one"* (or *"Number two"*, *"Select Project Final"*, *"Second"*)
+5. **Consent Confirmation Gate**: The assistant explicitly requests upload consent:
+   > *Assistant: "You selected Project Final.pdf. Shall I upload it?"*
+   > *User: "Yes"* (or *"Confirm"*, *"Upload it"*)
+6. **Automatic Ingestion & Tactile Translation**:
+   - Detects format (`.pdf`, `.txt`, `.brf`, image).
+   - Reads page count and extracts text (with OCR fallback for scanned pages).
+   - Automatically converts to Braille cells (UEB Grade 1/2 or Bharati Hindi Braille).
+   - Updates tactile cell strip and virtual simulator.
+   - Speaks confirmation aloud:
+     > *Assistant: "Successfully processed Project Final.pdf. Extracted 1,415 characters across 5 pages, converted into 1,532 Braille cells. You can say 'play' to feel each cell or 'read text' to listen."*
+
+### Security & Privacy Boundaries
+- **Permitted Roots Only**: Access is restricted strictly to permitted user personal directories (`Documents`, `Downloads`, `Desktop`, and project workspaces).
+- **Directory Traversal Protection**: System directories (`C:\Windows`, `System32`, `Program Files`) and relative parent escapes (`..`) are rejected with HTTP 403.
+- **Strict User Consent**: Files are never loaded, parsed, or uploaded without explicit verbal confirmation.
+
+---
+
+## 9. Installation & Quick Start
 
 ### Prerequisites
 - Python 3.10+ (tested on Python 3.13)
@@ -290,18 +327,18 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
 This automatically installs dependencies from `requirements.txt`, launches the Flask application on port 5050, and opens your default browser to `http://127.0.0.1:5050`.
 
-### Manual Launch
+### Standalone Voice Assistant Companion
+For users who wish to operate completely hands-free outside a browser:
+Double-click `run_voice_assistant.bat` or run:
 ```bash
-cd braille_bridge
-python -m pip install -r requirements.txt
-python app.py
+python braille_bridge\voice_assistant.py
 ```
-Open **http://127.0.0.1:5050** in Chrome or Edge.
+This operates directly via Windows SAPI Speech Synthesis and SpeechRecognition with 100% blind independence.
 
 ---
 
-## 9. Academic Project Documentation & Report
+## 10. Academic Project Documentation & Report
 
 A publication-quality capstone project summary document has been generated:
-- **`Braille_Bridge_Project_Summary.pdf`**: Complete 4-page academic summary report covering problem statement, system architecture, mathematical formulations, hardware wiring diagrams, test verification tables, and performance evaluations.
+- **`Braille_Bridge_Project_Summary.pdf`**: Complete publication-quality academic summary report covering problem statement, system architecture, mathematical formulations, hardware wiring diagrams, test verification tables (61/61 tests), and performance evaluations.
 - Built using ReportLab and located in both the workspace root and artifact directory.

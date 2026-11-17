@@ -486,3 +486,160 @@ def test_performance_conversion_benchmark():
     assert res['count'] > 0
     # Must complete in under 100ms
     assert elapsed_ms < 100.0, f"Conversion took {elapsed_ms:.2f} ms (expected < 100 ms)"
+
+
+# ==============================================================================
+# 8. INDEPENDENT VOICE-CONTROLLED FILE MANAGEMENT & NAVIGATION
+# ==============================================================================
+def test_permitted_roots_and_security():
+    roots = documents.get_permitted_roots()
+    assert 'documents' in roots or 'downloads' in roots or 'desktop' in roots
+    win_path = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'System32', 'notepad.exe')
+    assert documents.is_path_permitted(win_path) is False
+
+
+def test_ordinal_selection_resolution():
+    filenames = ['Project.pdf', 'Project Final.pdf', 'Project Report.pdf']
+    # Ordinals
+    assert documents.resolve_ordinal_selection('select the second one', 3, filenames) == 1
+    assert documents.resolve_ordinal_selection('select number 2', 3, filenames) == 1
+    assert documents.resolve_ordinal_selection('number two', 3, filenames) == 1
+    assert documents.resolve_ordinal_selection('the first one', 3, filenames) == 0
+    assert documents.resolve_ordinal_selection('number 1', 3, filenames) == 0
+    assert documents.resolve_ordinal_selection('third one', 3, filenames) == 2
+    assert documents.resolve_ordinal_selection('the last one', 3, filenames) == 2
+    # Partial name
+    assert documents.resolve_ordinal_selection('select project final', 3, filenames) == 1
+    assert documents.resolve_ordinal_selection('open report', 3, filenames) == 2
+
+
+def test_browse_folder_and_summary(tmp_path):
+    test_dir = tmp_path / "test_docs"
+    test_dir.mkdir()
+    (test_dir / "sample1.pdf").write_bytes(b"%PDF-1.4 sample pdf content")
+    (test_dir / "sample2.txt").write_text("Hello Braille Bridge voice assistant!", encoding="utf-8")
+
+    orig_func = documents.get_permitted_roots
+    orig_roots = orig_func()
+    documents.get_permitted_roots = lambda: {**orig_roots, 'test_alias': str(test_dir)}
+
+    try:
+        res = documents.browse_folder('test_alias')
+        assert res['ok'] is True
+        assert res['total_files'] == 2
+        assert 'spoken_summary' in res
+        assert 'sample1.pdf' in res['spoken_summary'] or 'sample2.txt' in res['spoken_summary']
+    finally:
+        documents.get_permitted_roots = orig_func
+
+
+def test_process_selected_file_and_conversion(tmp_path):
+    test_txt = tmp_path / "hello.txt"
+    test_txt.write_text("Hello Braille Bridge", encoding="utf-8")
+
+    orig_func = documents.get_permitted_roots
+    orig_roots = orig_func()
+    documents.get_permitted_roots = lambda: {**orig_roots, 'test_alias': str(tmp_path)}
+
+    try:
+        res = documents.process_selected_file(str(test_txt), lang='en', grade=1)
+        assert res['ok'] is True
+        assert res['filename'] == 'hello.txt'
+        assert res['chars'] == len("Hello Braille Bridge")
+        assert res['conversion']['count'] > 0
+        assert 'spoken_summary' in res
+    finally:
+        documents.get_permitted_roots = orig_func
+
+
+def test_api_files_endpoints(client, tmp_path):
+    # 1. Permitted folders
+    r_folders = client.get('/api/files/permitted-folders').get_json()
+    assert r_folders['ok'] is True
+    assert len(r_folders['folders']) > 0
+
+    # 2. Browse
+    r_browse = client.get('/api/files/browse?folder=documents').get_json()
+    assert r_browse['ok'] is True
+    assert 'spoken_summary' in r_browse
+
+    # 3. Search
+    r_search = client.get('/api/files/search?query=project').get_json()
+    assert r_search['ok'] is True
+    assert 'spoken_summary' in r_search
+
+    # 4. Resolve selection
+    cand_files = [
+        {'id': 1, 'filename': 'Project.pdf'},
+        {'id': 2, 'filename': 'Project Final.pdf'},
+        {'id': 3, 'filename': 'Report.txt'}
+    ]
+    r_resolve = client.post('/api/files/resolve-selection', json={
+        'phrase': 'select the second one',
+        'files': cand_files
+    }).get_json()
+    assert r_resolve['ok'] is True
+    assert r_resolve['selected_index'] == 1
+    assert r_resolve['file']['filename'] == 'Project Final.pdf'
+    assert 'Shall I upload it?' in r_resolve['prompt']
+
+    # 5. Load file - forbidden path security check
+    r_forbidden = client.post('/api/files/load', json={
+        'path': 'C:\\Windows\\System32\\cmd.exe'
+    })
+    assert r_forbidden.status_code == 403
+
+
+def test_end_to_end_conversational_file_flow(tmp_path):
+    """Test full conversational flow:
+    Assistant asks -> User: 'Find my project PDF' -> Assistant lists files ->
+    User: 'Select the second one' -> Assistant asks to confirm -> User: 'Yes' ->
+    System extracts and auto-converts to Braille.
+    """
+    docs_dir = tmp_path / "project_docs"
+    docs_dir.mkdir()
+
+    p1 = docs_dir / "Project.pdf"
+    p2 = docs_dir / "Project Final.pdf"
+    p3 = docs_dir / "Project Report.pdf"
+
+    for p in [p1, p2, p3]:
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        with open(p, "wb") as f:
+            writer.write(f)
+
+    orig_func = documents.get_permitted_roots
+    documents.get_permitted_roots = lambda: {'test_project_dir': str(docs_dir)}
+
+    try:
+        # Step 1: User says: "Find my project PDF"
+        search_res = documents.search_files("Find my project PDF")
+        assert search_res['ok'] is True
+        assert len(search_res['files']) == 3
+        assert "Number 1" in search_res['spoken_summary']
+        assert "Number 2" in search_res['spoken_summary']
+        assert "Number 3" in search_res['spoken_summary']
+
+        # Step 2: User says: "Select the second one"
+        filenames = [f['filename'] for f in search_res['files']]
+        sel_idx = documents.resolve_ordinal_selection("Select the second one", len(filenames), filenames)
+        assert sel_idx == 1
+        selected_file = search_res['files'][sel_idx]
+        assert selected_file['filename'] == "Project Final.pdf"
+
+        # Confirmation prompt generated
+        confirm_prompt = f"You selected {selected_file['filename']}. Shall I upload it?"
+        assert "Project Final.pdf" in confirm_prompt
+
+        # Step 3: User says: "Yes"
+        proc_res = documents.process_selected_file(selected_file['path'])
+        assert proc_res['ok'] is True
+        assert proc_res['filename'] == "Project Final.pdf"
+        assert proc_res['pages'] == 1
+        assert "spoken_summary" in proc_res
+        assert "Project Final.pdf" in proc_res['spoken_summary']
+    finally:
+        documents.get_permitted_roots = orig_func
+
+

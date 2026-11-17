@@ -50,13 +50,15 @@ function cellSVG(code, px, opts = {}) {
   return svg;
 }
 function speak(text, lang, onDone) {
+  const liveEl = $('#va-aria-live');
+  if (liveEl) liveEl.textContent = text || '';
   if (!('speechSynthesis' in window) || !text) {
     if (onDone) onDone();
     return;
   }
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang || 'en-IN';
+  u.lang = lang || ($('#lang') && $('#lang').value === 'hi' ? 'hi-IN' : 'en-IN');
   state.isSpeaking = true;
   u.onend = () => {
     state.isSpeaking = false;
@@ -67,6 +69,47 @@ function speak(text, lang, onDone) {
     if (onDone) onDone();
   };
   speechSynthesis.speak(u);
+}
+
+function playToneCue(kind) {
+  const chk = $('#sound-on');
+  if (chk && !chk.checked) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    if (kind === 'ready') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(520, now);
+      osc.frequency.exponentialRampToValueAtTime(680, now + 0.12);
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      osc.start(now);
+      osc.stop(now + 0.14);
+    } else if (kind === 'success') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.setValueAtTime(554, now + 0.08);
+      osc.frequency.setValueAtTime(659, now + 0.16);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+      osc.start(now);
+      osc.stop(now + 0.28);
+    } else if (kind === 'cancel') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(320, now + 0.14);
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    }
+  } catch (e) {}
 }
 function download(name, text, type) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); URL.revokeObjectURL(a.href);
@@ -286,102 +329,384 @@ if ($('#btn-quick-pdf')) {
   $('#btn-quick-pdf').onclick = () => $('#pdf-file').click();
 }
 
-/* Quick folder scan buttons */
-if ($('#btn-quick-desktop')) $('#btn-quick-desktop').onclick = () => searchAndLoadLocalPdf('desktop');
-if ($('#btn-quick-downloads')) $('#btn-quick-downloads').onclick = () => searchAndLoadLocalPdf('downloads');
-if ($('#btn-quick-documents')) $('#btn-quick-documents').onclick = () => searchAndLoadLocalPdf('documents');
+/* ---------- Voice-Controlled File Navigation & Management ---------- */
+const vaFileState = {
+  mode: 'IDLE', // 'IDLE' | 'LISTING' | 'AWAITING_CONFIRMATION' | 'PROCESSING'
+  currentFolder: 'documents',
+  currentSubpath: '',
+  parentPath: null,
+  canGoBack: false,
+  candidates: [],
+  selectedFile: null,
+  page: 1,
+  totalPages: 1,
+  lastSpokenPrompt: ''
+};
 
-async function searchAndLoadLocalPdf(folder, query) {
-  showTab('convert');
-  const folderDesc = folder ? `folder "${folder}"` : 'your folders';
-  setStatus(`Scanning ${folderDesc} for PDF…`);
-  const transcriptEl = $('#va-transcript');
-  if (transcriptEl) transcriptEl.innerHTML = `Scanning <strong>${folder || 'system folders'}</strong> for PDF…`;
-
+async function browseVoiceFolder(folder, subpath = '', page = 1, speakOut = true) {
+  const fDesc = folder || 'documents';
+  setStatus(`Browsing ${fDesc} folder…`);
   try {
-    const url = `/api/find-local-pdf?folder=${encodeURIComponent(folder || '')}&query=${encodeURIComponent(query || '')}&load=1&lang=${encodeURIComponent($('#lang').value)}&grade=${encodeURIComponent($('#grade').value)}`;
-    const r = await api(url);
+    const r = await api(`/api/files/browse?folder=${encodeURIComponent(folder || 'documents')}&subpath=${encodeURIComponent(subpath || '')}&page=${page}&page_size=6`);
+    if (!r.ok) throw new Error(r.error || 'Cannot open folder');
 
-    if (!r.ok || !r.found) {
-      const failMsg = `No PDF found in ${folderDesc}. Opening file selector so you can choose it manually.`;
-      setStatus(failMsg, 'bad');
-      speak(failMsg, 'en-IN', () => {
-        setTimeout(() => { if ($('#pdf-file')) $('#pdf-file').click(); }, 300);
-      });
-      return;
+    vaFileState.mode = 'LISTING';
+    vaFileState.currentFolder = r.folder_name;
+    vaFileState.currentSubpath = subpath;
+    vaFileState.canGoBack = r.can_go_back;
+    vaFileState.parentPath = r.parent_path;
+    vaFileState.candidates = r.files || [];
+    vaFileState.page = r.page || 1;
+    vaFileState.totalPages = r.total_pages || 1;
+    vaFileState.lastSpokenPrompt = r.spoken_summary;
+
+    renderFileExplorerUI(r);
+    renderCandidateChips(r.files);
+
+    if (speakOut && r.spoken_summary) {
+      announce(r.spoken_summary, () => playToneCue('ready'));
     }
-
-    if (r.loaded) {
-      const item = r.loaded;
-      $('#text').value = item.text || '';
-      if (item.conversion && item.conversion.cells) {
-        state.result = item.conversion;
-        state.idx = 0;
-        stopPlay();
-        $('#unicode').textContent = item.conversion.braille;
-        $('#meta').textContent = `${item.conversion.count} cells · Extracted from "${item.filename}" (${item.folder})`;
-        ['#btn-copy', '#btn-brf', '#btn-txt', '#btn-speak'].forEach(b => $(b).disabled = false);
-        const strip = $('#strip'); strip.replaceChildren();
-        item.conversion.cells.forEach((c, i) => {
-          const b = el('button', { className: 'cellbox', type: 'button', title: 'Cell ' + (i + 1) + ': ' + describe(c) });
-          b.append(cellSVG(c, 26), el('small', {}, c ? item.conversion.ascii[i] : '␣'));
-          b.addEventListener('click', () => { stopPlay(); showCell(i); });
-          strip.append(b);
-        });
-        showCell(0);
-      } else if (item.text) {
-        await convert();
-      }
-
-      const msg = `Found and loaded "${item.filename}" from ${item.folder} (${item.chars} chars across ${item.pages} page(s)).`;
-      setStatus(msg, 'ok');
-      speak(`Found and loaded ${item.filename} from your ${item.folder} folder. Converted to Braille successfully.`);
-
-      if (transcriptEl) {
-        transcriptEl.innerHTML = `Loaded: "<strong>${item.filename}</strong>" from <em>${item.folder}</em>`;
-      }
-      renderFoundPdfChips(r.files);
-    }
-  } catch (err) {
-    setStatus(`Error searching folder: ${err.message}`, 'bad');
-    speak(`Error finding PDF: ${err.message}`);
+  } catch (e) {
+    setStatus('Folder navigation error: ' + e.message, 'bad');
+    announce('Could not open folder ' + fDesc + ': ' + e.message);
   }
 }
 
-function renderFoundPdfChips(files) {
-  if (!files || files.length <= 1) return;
-  let container = $('#va-found-files');
-  if (!container) {
-    container = el('div', { id: 'va-found-files', style: 'margin-top:0.6rem; display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center;' });
-    const banner = $('#va-banner');
-    if (banner) banner.querySelector('.va-chips').parentNode.appendChild(container);
+async function searchVoiceFiles(query, folder = '', speakOut = true) {
+  setStatus(`Searching files for "${query}"…`);
+  try {
+    const r = await api(`/api/files/search?query=${encodeURIComponent(query || '')}&folder=${encodeURIComponent(folder || '')}&limit=6`);
+    if (!r.ok) throw new Error(r.error || 'Search failed');
+
+    vaFileState.mode = 'LISTING';
+    vaFileState.candidates = r.files || [];
+    vaFileState.page = 1;
+    vaFileState.totalPages = 1;
+    vaFileState.lastSpokenPrompt = r.spoken_summary;
+
+    renderFileExplorerUI({
+      folder_name: `Search: "${query}"`,
+      files: r.files,
+      can_go_back: true,
+      total_files: r.found,
+      page: 1,
+      total_pages: 1
+    });
+    renderCandidateChips(r.files);
+
+    if (speakOut && r.spoken_summary) {
+      announce(r.spoken_summary, () => playToneCue('ready'));
+    }
+  } catch (e) {
+    setStatus('File search error: ' + e.message, 'bad');
+    announce('Error searching files: ' + e.message);
   }
-  container.replaceChildren(el('span', { style: 'font-size:0.8rem; font-weight:600; color:var(--muted);' }, 'Other PDFs in folder: '));
-  files.slice(1, 6).forEach(f => {
+}
+
+function selectCandidateFile(file) {
+  if (!file) return;
+  vaFileState.selectedFile = file;
+  vaFileState.mode = 'AWAITING_CONFIRMATION';
+
+  const promptText = `You selected ${file.filename}. Shall I upload it?`;
+  vaFileState.lastSpokenPrompt = promptText;
+
+  const confirmBox = $('#va-confirm-box');
+  const confirmPrompt = $('#va-confirm-prompt');
+  if (confirmBox && confirmPrompt) {
+    confirmPrompt.textContent = promptText;
+    confirmBox.hidden = false;
+  }
+
+  const feConfirmBox = $('#fe-confirm-box');
+  const feConfirmPrompt = $('#fe-confirm-prompt');
+  if (feConfirmBox && feConfirmPrompt) {
+    feConfirmPrompt.textContent = promptText;
+    feConfirmBox.hidden = false;
+  }
+
+  document.querySelectorAll('.va-file-item').forEach(it => {
+    it.classList.toggle('selected', it.dataset.path === file.path);
+  });
+
+  announce(promptText, () => playToneCue('ready'));
+}
+
+async function confirmUploadAndConvert() {
+  if (!vaFileState.selectedFile) return;
+  const file = vaFileState.selectedFile;
+  vaFileState.mode = 'PROCESSING';
+
+  if ($('#va-confirm-box')) $('#va-confirm-box').hidden = true;
+  if ($('#fe-confirm-box')) $('#fe-confirm-box').hidden = true;
+
+  const startingMsg = `Uploading and processing ${file.filename}…`;
+  setStatus(startingMsg);
+  announce(startingMsg);
+
+  try {
+    const lang = ($('#lang') && $('#lang').value) || 'auto';
+    const grade = ($('#grade') && $('#grade').value) || 1;
+    const pageRange = ($('#pdf-page-range') && $('#pdf-page-range').value) || 'all';
+    const ocrLang = ($('#ocr-lang') && $('#ocr-lang').value) || 'eng';
+
+    const r = await api('/api/files/load', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path: file.path,
+        lang: lang,
+        grade: grade,
+        page_range: pageRange,
+        ocr_lang: ocrLang
+      })
+    });
+
+    if (!r.ok) throw new Error(r.error || 'Failed to load and process file');
+
+    $('#text').value = r.text || '';
+    if ($('#pdf-preview-text')) $('#pdf-preview-text').value = r.text || '';
+    if ($('#btn-convert-pdf-text')) $('#btn-convert-pdf-text').disabled = !r.text;
+    updateCharCount();
+
+    if ($('#doc-stats')) {
+      $('#doc-stats').textContent = `📄 ${r.filename}: ${r.chars} chars across ${r.pages} of ${r.total_pages} page(s) · Method: ${r.method}`;
+    }
+
+    if (r.conversion && r.conversion.cells) {
+      applyConversionResult(r.conversion, `from "${r.filename}"`);
+    } else {
+      await convert();
+    }
+
+    showTab('convert');
+    playToneCue('success');
+
+    const doneMsg = r.spoken_summary || `Successfully processed ${r.filename} and converted normal text to Braille.`;
+    setStatus(doneMsg, 'ok');
+    announce(doneMsg);
+
+    vaFileState.mode = 'IDLE';
+    vaFileState.selectedFile = null;
+  } catch (err) {
+    playToneCue('cancel');
+    setStatus('Error processing document: ' + err.message, 'bad');
+    announce('Error processing document: ' + err.message);
+    vaFileState.mode = 'LISTING';
+  }
+}
+
+function cancelSelection() {
+  vaFileState.selectedFile = null;
+  if ($('#va-confirm-box')) $('#va-confirm-box').hidden = true;
+  if ($('#fe-confirm-box')) $('#fe-confirm-box').hidden = true;
+  document.querySelectorAll('.va-file-item').forEach(it => it.classList.remove('selected'));
+
+  playToneCue('cancel');
+  const msg = 'Upload cancelled. Which file would you like to select?';
+  announce(msg);
+  vaFileState.mode = vaFileState.candidates.length > 0 ? 'LISTING' : 'IDLE';
+}
+
+function repeatVoicePrompt() {
+  if (vaFileState.mode === 'AWAITING_CONFIRMATION' && vaFileState.selectedFile) {
+    announce(`You selected ${vaFileState.selectedFile.filename}. Shall I upload it?`, () => playToneCue('ready'));
+  } else if (vaFileState.mode === 'LISTING' && vaFileState.candidates.length > 0) {
+    if (vaFileState.lastSpokenPrompt) {
+      announce(vaFileState.lastSpokenPrompt, () => playToneCue('ready'));
+    } else {
+      const lines = vaFileState.candidates.map(f => `Number ${f.id}: ${f.filename}`);
+      announce(`Available files: ${lines.join('. ')}. Which one would you like?`, () => playToneCue('ready'));
+    }
+  } else {
+    const greeting = getGreeting();
+    announce(`${greeting} Welcome to Braille Bridge. Which file would you like to convert? You can say: Find my project PDF, or open Documents, Downloads, or Desktop.`);
+  }
+}
+
+function goBackVoiceFolder() {
+  if (vaFileState.canGoBack && vaFileState.parentPath) {
+    browseVoiceFolder(vaFileState.parentPath, '', 1, true);
+  } else if (vaFileState.currentFolder !== 'documents') {
+    browseVoiceFolder('documents', '', 1, true);
+  } else {
+    announce('Already at the root Documents folder.');
+  }
+}
+
+function resolveCandidateSelection(phrase) {
+  if (!vaFileState.candidates || !vaFileState.candidates.length) {
+    announce('No files are currently listed. Say open Documents or find my project PDF first.');
+    return;
+  }
+  const phraseLower = phrase.toLowerCase().trim();
+  const count = vaFileState.candidates.length;
+
+  const ordMap = {
+    'first': 0, '1st': 0, 'one': 0, '1': 0,
+    'second': 1, '2nd': 1, 'two': 1, '2': 1,
+    'third': 2, '3rd': 2, 'three': 2, '3': 2,
+    'fourth': 3, '4th': 3, 'four': 3, '4': 3,
+    'fifth': 4, '5th': 4, 'five': 4, '5': 4,
+    'sixth': 5, '6th': 5, 'six': 5, '6': 5,
+  };
+
+  let selectedIdx = null;
+  if (phraseLower.includes('last')) {
+    selectedIdx = count - 1;
+  } else {
+    const words = phraseLower.split(/\s+/);
+    for (const w of words) {
+      if (ordMap[w] !== undefined && ordMap[w] < count) {
+        selectedIdx = ordMap[w];
+        break;
+      }
+    }
+  }
+
+  if (selectedIdx === null) {
+    let bestScore = 0;
+    vaFileState.candidates.forEach((cand, idx) => {
+      const baseName = cand.filename.toLowerCase().replace(/\.[^/.]+$/, '');
+      if (phraseLower.includes(baseName)) {
+        if (baseName.length > bestScore) {
+          bestScore = baseName.length;
+          selectedIdx = idx;
+        }
+      }
+    });
+  }
+
+  if (selectedIdx !== null && vaFileState.candidates[selectedIdx]) {
+    selectCandidateFile(vaFileState.candidates[selectedIdx]);
+  } else {
+    announce(`I didn't catch which file you wanted. Please say number 1 through ${count}, or speak the filename.`);
+  }
+}
+
+function renderCandidateChips(files) {
+  const container = $('#va-candidates-chips');
+  const area = $('#va-candidates-area');
+  if (!container || !area) return;
+  if (!files || !files.length) {
+    area.hidden = true;
+    return;
+  }
+  area.hidden = false;
+  container.replaceChildren();
+  files.forEach(f => {
     const chip = el('button', {
       type: 'button',
       className: 'va-chip',
-      style: 'border-color:var(--brand); font-size:0.78rem;',
+      style: 'font-size:0.82rem; font-weight:600; display:inline-flex; align-items:center; gap:0.35rem;',
       title: f.path
-    }, '📄 ' + f.filename);
-    chip.onclick = () => loadDirectPdfPath(f.path, f.filename);
+    }, el('span', { className: 'va-ordinal-badge', style: 'width:20px; height:20px; font-size:0.75rem;' }, String(f.id)), ' ' + f.filename);
+    chip.onclick = () => selectCandidateFile(f);
     container.append(chip);
   });
 }
 
-async function loadDirectPdfPath(path, filename) {
-  setStatus(`Loading ${filename}…`);
-  try {
-    const r = await api(`/api/find-local-pdf?path=${encodeURIComponent(path)}&load=1&lang=${encodeURIComponent($('#lang').value)}&grade=${encodeURIComponent($('#grade').value)}`);
-    if (r.loaded) {
-      $('#text').value = r.loaded.text || '';
-      await convert();
-      speak(`Loaded ${filename} and converted to Braille.`);
-    }
-  } catch(e) {
-    setStatus(e.message, 'bad');
+function renderFileExplorerUI(data) {
+  const breadcrumbs = $('#fe-current-folder');
+  if (breadcrumbs) breadcrumbs.textContent = data.folder_name || 'Documents';
+
+  const backBtn = $('#fe-btn-back');
+  if (backBtn) backBtn.disabled = !data.can_go_back;
+
+  const list = $('#fe-file-list');
+  if (!list) return;
+  list.replaceChildren();
+
+  if (!data.files || !data.files.length) {
+    list.append(el('p', { className: 'hint', style: 'grid-column: 1/-1; padding: 1rem;' },
+      `No supported document files found in ${data.folder_name}. Try another folder above.`));
+    if ($('#fe-pagination')) $('#fe-pagination').hidden = true;
+    return;
+  }
+
+  data.files.forEach(f => {
+    const item = el('button', {
+      type: 'button',
+      className: 'va-file-item' + (vaFileState.selectedFile && vaFileState.selectedFile.path === f.path ? ' selected' : ''),
+      dataset: { path: f.path }
+    },
+      el('span', { className: 'va-ordinal-badge' }, String(f.id)),
+      el('div', { className: 'va-file-info' },
+        el('div', { className: 'va-file-name' }, f.filename),
+        el('div', { className: 'va-file-meta' }, `${f.size_str || ''} · ${f.type.toUpperCase()}`)
+      ),
+      el('span', { style: 'font-size:0.8rem; font-weight:600; color:var(--brand-secondary); margin-left:auto;' }, 'Select')
+    );
+    item.onclick = () => selectCandidateFile(f);
+    list.append(item);
+  });
+
+  const pag = $('#fe-pagination');
+  if (pag) {
+    pag.hidden = (data.total_pages <= 1);
+    const info = $('#fe-page-info');
+    if (info) info.textContent = `Page ${data.page || 1} of ${data.total_pages || 1}`;
+    const prevBtn = $('#fe-btn-prev-page');
+    if (prevBtn) prevBtn.disabled = (data.page <= 1);
+    const nextBtn = $('#fe-btn-next-page');
+    if (nextBtn) nextBtn.disabled = (data.page >= data.total_pages);
   }
 }
+
+// Explorer button attachments
+if ($('#btn-quick-desktop') || $('#fe-btn-desktop')) {
+  const fnDesk = () => { showTab('pdf'); browseVoiceFolder('desktop'); };
+  if ($('#btn-quick-desktop')) $('#btn-quick-desktop').onclick = fnDesk;
+  if ($('#fe-btn-desktop')) $('#fe-btn-desktop').onclick = fnDesk;
+}
+if ($('#btn-quick-downloads') || $('#fe-btn-downloads')) {
+  const fnDown = () => { showTab('pdf'); browseVoiceFolder('downloads'); };
+  if ($('#btn-quick-downloads')) $('#btn-quick-downloads').onclick = fnDown;
+  if ($('#fe-btn-downloads')) $('#fe-btn-downloads').onclick = fnDown;
+}
+if ($('#btn-quick-documents') || $('#fe-btn-documents')) {
+  const fnDocs = () => { showTab('pdf'); browseVoiceFolder('documents'); };
+  if ($('#btn-quick-documents')) $('#btn-quick-documents').onclick = fnDocs;
+  if ($('#fe-btn-documents')) $('#fe-btn-documents').onclick = fnDocs;
+}
+if ($('#fe-btn-capstone')) $('#fe-btn-capstone').onclick = () => { showTab('pdf'); browseVoiceFolder('capston'); };
+if ($('#fe-btn-back')) $('#fe-btn-back').onclick = () => goBackVoiceFolder();
+if ($('#fe-btn-repeat')) $('#fe-btn-repeat').onclick = () => repeatVoicePrompt();
+
+if ($('#fe-btn-search')) {
+  $('#fe-btn-search').onclick = () => {
+    const q = ($('#fe-search-input') && $('#fe-search-input').value.trim()) || '';
+    if (q) searchVoiceFiles(q);
+  };
+}
+if ($('#fe-search-input')) {
+  $('#fe-search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const q = e.target.value.trim();
+      if (q) searchVoiceFiles(q);
+    }
+  });
+}
+if ($('#fe-btn-voice-search')) {
+  $('#fe-btn-voice-search').onclick = () => {
+    showTab('pdf');
+    announce('What file name would you like to search for?');
+  };
+}
+if ($('#fe-btn-prev-page')) {
+  $('#fe-btn-prev-page').onclick = () => {
+    if (vaFileState.page > 1) browseVoiceFolder(vaFileState.currentFolder, vaFileState.currentSubpath, vaFileState.page - 1);
+  };
+}
+if ($('#fe-btn-next-page')) {
+  $('#fe-btn-next-page').onclick = () => {
+    if (vaFileState.page < vaFileState.totalPages) browseVoiceFolder(vaFileState.currentFolder, vaFileState.currentSubpath, vaFileState.page + 1);
+  };
+}
+if ($('#btn-va-confirm-yes')) $('#btn-va-confirm-yes').onclick = confirmUploadAndConvert;
+if ($('#btn-va-confirm-no')) $('#btn-va-confirm-no').onclick = cancelSelection;
+if ($('#btn-fe-confirm-yes')) $('#btn-fe-confirm-yes').onclick = confirmUploadAndConvert;
+if ($('#btn-fe-confirm-no')) $('#btn-fe-confirm-no').onclick = cancelSelection;
 
 /* ---------- OCR ---------- */
 $('#file').addEventListener('change', async e => {
@@ -453,12 +778,10 @@ $('#file').addEventListener('change', async e => {
       if (statusText) statusText.textContent = 'Voice Assistant Active';
       if (speakGreeting) {
         const greeting = getGreeting();
-        const msg = `${greeting} Welcome to Braille Bridge. What file do you want to upload, and what file do you want to convert?`;
+        const msg = `${greeting} Welcome to Braille Bridge. Which file would you like to convert? You can say: Find my project PDF, or open Documents, Downloads, or Desktop.`;
         announce(msg, () => {
-          if (statusText) statusText.textContent = 'Opening file selector now…';
-          setTimeout(() => {
-            if ($('#pdf-file')) $('#pdf-file').click();
-          }, 400);
+          playToneCue('ready');
+          startListening();
         });
       } else {
         startListening();
@@ -489,7 +812,6 @@ $('#file').addEventListener('change', async e => {
       };
 
       recognition.onresult = event => {
-        // If system is currently speaking, discard any detected echo
         if (state.isSpeaking) return;
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -539,38 +861,20 @@ $('#file').addEventListener('change', async e => {
     if (!phrase) return;
     if (transcriptEl) transcriptEl.innerHTML = `Heard: "<strong>${phrase}</strong>"`;
 
-    // 1. Upload PDF
-    // Handles: "upload a pdf", "upload apdf", "upload pdf", "upload the pdf", "upload pdf from desktop", etc.
-    const isPdfUploadIntent = phrase.includes('pdf') || phrase.includes('document') || phrase.includes('upload file');
-    const isUploadAction = phrase.includes('upload') || phrase.includes('load') || phrase.includes('choose') || phrase.includes('select') || phrase.includes('open');
-
-    if (isPdfUploadIntent && isUploadAction) {
-      showTab('convert');
-      let targetFolder = '';
-      let targetQuery = '';
-
-      if (phrase.includes('desktop')) targetFolder = 'desktop';
-      else if (phrase.includes('download')) targetFolder = 'downloads';
-      else if (phrase.includes('document')) targetFolder = 'documents';
-      else if (phrase.includes('capston') || phrase.includes('capstone')) targetFolder = 'capston';
-
-      if (phrase.includes('report')) targetQuery = 'report';
-      else if (phrase.includes('assignment')) targetQuery = 'assignment';
-      else if (phrase.includes('mahesh')) targetQuery = 'mahesh';
-      else if (phrase.includes('photo')) targetQuery = 'photo';
-
-      if (targetFolder || targetQuery) {
-        announce(`Searching for PDF in ${targetFolder || 'your computer'}…`, () => {
-          searchAndLoadLocalPdf(targetFolder, targetQuery);
-        });
-      } else {
-        announce('Please choose your PDF file. I will load and convert it to Braille.', () => {
-          setTimeout(() => {
-            if ($('#pdf-file')) $('#pdf-file').click();
-          }, 300);
-        });
+    // 1. If currently waiting for user confirmation to upload:
+    if (vaFileState.mode === 'AWAITING_CONFIRMATION') {
+      if (phrase === 'yes' || phrase === 'sure' || phrase === 'yeah' || phrase.includes('yes upload') || phrase.includes('confirm') || phrase.includes('upload it') || phrase.includes('please do') || phrase === 'upload') {
+        confirmUploadAndConvert();
+        return;
       }
-      return;
+      if (phrase === 'no' || phrase.includes('cancel') || phrase.includes('wrong') || phrase.includes("don't upload") || phrase.includes('stop')) {
+        cancelSelection();
+        return;
+      }
+      if (phrase.includes('repeat') || phrase.includes('again')) {
+        repeatVoicePrompt();
+        return;
+      }
     }
 
     // 2. Stop Speaking / Silence
@@ -583,14 +887,96 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 3. Repeat Instruction
-    if (phrase.includes('repeat') || phrase.includes('again') || phrase.includes('what did you say')) {
-      const greeting = getGreeting();
-      announce(`${greeting} Welcome to Braille Bridge. You can say: Upload PDF, Upload from Desktop, Convert to Braille, Test Dots, Read Aloud, or Help.`);
+    // 3. Repeat Instruction or File List
+    if (phrase.includes('repeat') || phrase.includes('again') || phrase.includes('what did you say') || phrase.includes('read files') || phrase.includes('read again')) {
+      repeatVoicePrompt();
       return;
     }
 
-    // 4. Hardware Self Test / Dot Test
+    // 4. Cancel
+    if (phrase === 'cancel' || phrase.includes('cancel selection')) {
+      cancelSelection();
+      return;
+    }
+
+    // 5. Go Back / Previous Folder
+    if (phrase.includes('go back') || phrase.includes('previous folder') || phrase.includes('parent folder') || phrase === 'back') {
+      goBackVoiceFolder();
+      return;
+    }
+
+    // 6. Pagination in file list
+    if (phrase.includes('next page')) {
+      if (vaFileState.page < vaFileState.totalPages) {
+        browseVoiceFolder(vaFileState.currentFolder, vaFileState.currentSubpath, vaFileState.page + 1);
+      } else {
+        announce('Already on the last page of files.');
+      }
+      return;
+    }
+    if (phrase.includes('previous page')) {
+      if (vaFileState.page > 1) {
+        browseVoiceFolder(vaFileState.currentFolder, vaFileState.currentSubpath, vaFileState.page - 1);
+      } else {
+        announce('Already on the first page of files.');
+      }
+      return;
+    }
+
+    // 7. If in LISTING state, test for candidate selection (e.g. "select the second one", "number two")
+    if (vaFileState.mode === 'LISTING') {
+      const isSelectIntent = phrase.includes('select') || phrase.includes('choose') || phrase.includes('open') || phrase.includes('pick') ||
+                             phrase.includes('first') || phrase.includes('second') || phrase.includes('third') || phrase.includes('fourth') ||
+                             phrase.includes('fifth') || phrase.includes('sixth') || phrase.includes('number') ||
+                             phrase.includes('1') || phrase.includes('2') || phrase.includes('3') || phrase.includes('4') || phrase.includes('5') ||
+                             phrase.includes('last');
+      if (isSelectIntent) {
+        resolveCandidateSelection(phrase);
+        return;
+      }
+    }
+
+    // 8. Open specific folders: Documents, Downloads, Desktop, Capstone
+    if (phrase.includes('open document') || phrase.includes('in documents') || phrase === 'documents' || phrase.includes('show documents')) {
+      showTab('pdf');
+      browseVoiceFolder('documents');
+      return;
+    }
+    if (phrase.includes('open download') || phrase.includes('in downloads') || phrase === 'downloads' || phrase.includes('show downloads')) {
+      showTab('pdf');
+      browseVoiceFolder('downloads');
+      return;
+    }
+    if (phrase.includes('open desktop') || phrase.includes('in desktop') || phrase === 'desktop' || phrase.includes('show desktop')) {
+      showTab('pdf');
+      browseVoiceFolder('desktop');
+      return;
+    }
+    if (phrase.includes('open capston') || phrase.includes('open capstone') || phrase.includes('capston')) {
+      showTab('pdf');
+      browseVoiceFolder('capston');
+      return;
+    }
+
+    // 9. Search / Find: "Find my project PDF", "Search for report"
+    if (phrase.startsWith('find ') || phrase.startsWith('search ') || phrase.includes('find my') || phrase.includes('search for') || phrase.includes('project pdf')) {
+      showTab('pdf');
+      let q = phrase.replace(/^(find\s+my|find|search\s+for|search)\s+/, '').trim();
+      if (!q || q === 'pdf') q = 'project';
+      searchVoiceFiles(q);
+      return;
+    }
+
+    // 10. General "upload pdf" or "upload file" prompt
+    if (phrase.includes('upload pdf') || phrase.includes('upload a pdf') || phrase.includes('upload document') || phrase.includes('choose file')) {
+      showTab('pdf');
+      announce('Which file would you like to convert? You can say: Find my project PDF, or open Documents, Downloads, or Desktop.', () => {
+        playToneCue('ready');
+      });
+      return;
+    }
+
+    // 11. Hardware Self Test / Dot Test
     if (phrase.includes('test dot') || phrase.includes('hardware test') || phrase.includes('test hardware') || phrase.includes('check cell')) {
       showTab('device');
       announce('Running 6-dot hardware diagnostic self-test.', () => {
@@ -599,7 +985,7 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 5. Player Controls: Next, Back, Play, Pause
+    // 12. Player Controls: Next, Back, Play, Pause
     if (phrase.includes('next cell') || phrase === 'next' || phrase === 'forward') {
       $('#p-next').click();
       announce('Next cell: ' + $('#cur').textContent);
@@ -621,7 +1007,7 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 6. Navigation Commands
+    // 13. Navigation Commands
     if (phrase.includes('open website') || phrase.includes('home') || phrase.includes('main page')) {
       showTab('home');
       announce('Showing Braille Bridge homepage.');
@@ -653,7 +1039,7 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 9. Convert Normal Text to Braille Text
+    // 14. Convert Normal Text to Braille Text
     if (phrase.includes('convert') || phrase.includes('translate') || phrase.includes('to braille') || phrase.includes('make braille')) {
       showTab('convert');
       if (!$('#text').value.trim()) {
@@ -666,10 +1052,9 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 10. Read Aloud
-    if (phrase === 'yes' || phrase === 'sure' || phrase === 'yeah' || phrase.includes('yes read') ||
-        phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') ||
-        phrase.includes('speak') || phrase.includes('read this') || phrase.includes('read it')) {
+    // 15. Read Aloud
+    if (phrase.includes('read aloud') || phrase.includes('read text') || phrase.includes('read braille') ||
+        phrase.includes('speak text') || phrase.includes('read this') || phrase.includes('read it')) {
       const text = $('#text').value;
       if (!text.trim()) {
         announce('No text to read aloud. Please upload a PDF or enter text first.');
@@ -679,20 +1064,20 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 11. Clear
+    // 16. Clear
     if (phrase.includes('clear') || phrase.includes('reset') || phrase.includes('erase')) {
       $('#text').value = '';
       announce('Text cleared.');
       return;
     }
 
-    // 12. Help
+    // 17. Help
     if (phrase.includes('help') || phrase.includes('command') || phrase.includes('what can you do') || phrase.includes('options')) {
-      announce('You can say: Upload PDF, Upload from Desktop, Convert, Stop speaking, Test dots, Next cell, Play, Read aloud, or Clear.');
+      announce('You can say: Find my project PDF, Open Documents, Open Downloads, Select the second one, Upload it, Convert, Stop speaking, Test dots, Next cell, Play, Read aloud, or Clear.');
       return;
     }
 
-    // 13. Dictate / Type explicitly
+    // 18. Dictate / Type explicitly
     if (phrase.startsWith('type ') || phrase.startsWith('write ') || phrase.startsWith('dictate ')) {
       const dictatedText = phrase.replace(/^(type|write|dictate)\s+/, '').trim();
       if (dictatedText) {
@@ -703,9 +1088,8 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // If unhandled, prompt help without polluting textarea
     if (transcriptEl) {
-      transcriptEl.innerHTML = `Heard: "<em>${phrase}</em>" &nbsp;·&nbsp; <small style="color:var(--muted)">Say <strong>"Help"</strong> or click a command below</small>`;
+      transcriptEl.innerHTML = `Heard: "<em>${phrase}</em>" &nbsp;·&nbsp; <small style="color:var(--text-muted)">Say <strong>"Help"</strong> or speak a command</small>`;
     }
   }
 
@@ -745,20 +1129,19 @@ $('#file').addEventListener('change', async e => {
     if (banner) banner.hidden = false;
 
     const greeting = getGreeting();
-    const promptMessage = `${greeting} Welcome to Braille Bridge. What file do you want to upload, and what file do you want to convert?`;
+    const promptMessage = `${greeting} Welcome to Braille Bridge. Which file would you like to convert? You can say: Find my project PDF, or open Documents, Downloads, or Desktop.`;
 
     if (statusText) statusText.textContent = 'Voice Assistant Active · Listening for commands…';
     if (transcriptEl) transcriptEl.innerHTML = `<strong>${promptMessage}</strong>`;
 
-    speak(promptMessage, 'en-IN', () => {
+    announce(promptMessage, () => {
+      playToneCue('ready');
       startListening();
     });
   }
 
-  // Automatically greet when website opens without intrusive popup
   setTimeout(autoWelcomeAndAsk, 600);
 
-  // Fallback for browsers with strict gesture policy: any touch, click or keypress unlocks audio & file picker
   function handleFirstUserTouch() {
     if (!autoWelcomeDone) autoWelcomeAndAsk();
     window.removeEventListener('click', handleFirstUserTouch);

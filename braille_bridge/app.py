@@ -245,6 +245,123 @@ def create_app(db_path=None):
 
         return jsonify(payload)
 
+    # ---------------- Voice File Management & Navigation ----------------
+    @app.get('/api/files/permitted-folders')
+    def files_permitted_folders():
+        roots = documents.get_permitted_roots()
+        folder_list = []
+        labels = {
+            'documents': 'Documents',
+            'downloads': 'Downloads',
+            'desktop': 'Desktop',
+            'capston': 'Capstone',
+            'capstone': 'Capstone',
+            'workspace': 'Workspace'
+        }
+        seen = set()
+        for k, path in roots.items():
+            if k in ('document', 'download', 'app'):
+                continue
+            if path in seen:
+                continue
+            seen.add(path)
+            folder_list.append({
+                'id': k,
+                'label': labels.get(k, k.capitalize()),
+                'path': path
+            })
+        return jsonify(ok=True, folders=folder_list)
+
+    @app.get('/api/files/browse')
+    def files_browse():
+        folder = request.args.get('folder', 'documents')
+        subpath = request.args.get('subpath', '')
+        page = request.args.get('page', 1)
+        page_size = request.args.get('page_size', 8)
+        try:
+            page = int(page)
+            page_size = int(page_size)
+        except ValueError:
+            page = 1
+            page_size = 8
+
+        res = documents.browse_folder(folder, subpath, page=page, page_size=page_size)
+        if not res.get('ok'):
+            return err(res.get('error', 'Cannot browse directory'), 403)
+        return jsonify(res)
+
+    @app.get('/api/files/search')
+    def files_search():
+        query = request.args.get('query', '')
+        folder = request.args.get('folder', '')
+        limit = request.args.get('limit', 10)
+        try:
+            limit = int(limit)
+        except ValueError:
+            limit = 10
+
+        res = documents.search_files(query, folder, max_results=limit)
+        return jsonify(res)
+
+    @app.post('/api/files/resolve-selection')
+    def files_resolve_selection():
+        d = request.get_json(silent=True) or {}
+        phrase = str(d.get('phrase', ''))
+        files = d.get('files', [])
+
+        if not files or not isinstance(files, list):
+            return err('files must be a non-empty list of candidate files')
+
+        filenames = [f.get('filename') or f.get('name') or '' for f in files]
+        idx = documents.resolve_ordinal_selection(phrase, len(files), filenames)
+
+        if idx is None:
+            return jsonify(ok=False, message="Could not determine selected file from phrase", phrase=phrase)
+
+        target = files[idx]
+        fn = target.get('filename') or target.get('name') or f'File {idx + 1}'
+        prompt = f"You selected {fn}. Shall I upload it?"
+        return jsonify(
+            ok=True,
+            selected_index=idx,
+            file=target,
+            prompt=prompt
+        )
+
+    @app.post('/api/files/load')
+    def files_load():
+        d = request.get_json(silent=True) or {}
+        path = str(d.get('path', ''))
+        page_range = str(d.get('page_range', 'all'))
+        ocr_lang = str(d.get('ocr_lang', 'eng'))
+        lang = str(d.get('lang', 'auto'))
+        grade_raw = d.get('grade', 1)
+        try:
+            grade = int(grade_raw)
+        except Exception:
+            grade = 1
+
+        if not path:
+            return err('path is required')
+
+        try:
+            res = documents.process_selected_file(
+                file_path=path,
+                page_range=page_range,
+                ocr_lang=ocr_lang,
+                lang=lang,
+                grade=grade
+            )
+            return jsonify(res)
+        except PermissionError as e:
+            return err(str(e), 403)
+        except FileNotFoundError as e:
+            return err(str(e), 404)
+        except Exception as e:
+            logger.error(f"Error loading file {path}: {e}", exc_info=True)
+            return err(f"Failed to process file: {e}", 500)
+
+
     # ---------------- Learning Module ----------------
     def uname():
         u = (request.args.get('user') or (request.get_json(silent=True) or {}).get('user') or 'guest').strip()[:40]

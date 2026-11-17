@@ -1,9 +1,11 @@
-"""Braille Bridge – Voice Assistant CLI and Companion.
+"""Braille Bridge – Voice Assistant CLI and Desktop Companion.
 
 Provides hands-free voice assistance to:
-1. Open the Braille Bridge website in the browser.
-2. Select and upload PDF documents to convert to Braille.
-3. Convert speech or text to Braille and read aloud.
+1. Open permitted folders (Documents, Downloads, Desktop, Capstone) using voice.
+2. Search, list, and read filenames aloud one by one with ordinal numbers.
+3. Select files by speaking their name or number ("select the second one", "number two").
+4. Confirm upload and automatically extract text, run OCR if scanned, and convert to Braille.
+5. Provide 100% blind independence without requiring sighted assistance or clicking buttons.
 """
 import os
 import sys
@@ -11,7 +13,7 @@ import time
 import subprocess
 import webbrowser
 import threading
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 # Ensure local imports work
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +33,7 @@ def speak(text: str):
             subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps_cmd],
                 capture_output=True,
-                timeout=10
+                timeout=12
             )
         except Exception:
             pass
@@ -62,104 +64,148 @@ def cmd_open_website():
     webbrowser.open(SERVER_URL)
 
 
-def cmd_upload_pdf(file_path: Optional[str] = None, folder_name: str = '', query: str = ''):
-    """Command: Find and upload a PDF document from a folder or file picker."""
-    if not file_path:
-        if folder_name or query:
-            speak(f"Searching for PDF in {folder_name or 'your computer'}...")
-            found = documents.find_local_pdfs(folder_name, query)
-            if found:
-                file_path = found[0]['path']
-                speak(f"Found {found[0]['filename']} in your {found[0]['folder']} folder.")
-            else:
-                speak(f"No PDF found in {folder_name or 'your folders'}. Opening file picker.")
-        else:
-            # Check Desktop first for recent files
-            found = documents.find_local_pdfs('desktop', '')
-            if found:
-                file_path = found[0]['path']
-                speak(f"Found recent document {found[0]['filename']} on Desktop.")
+class VoiceFileManager:
+    """Conversational voice file management state machine for blind users."""
 
-    if not file_path:
-        speak("Please select a PDF document to upload.")
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes('-topmost', True)
-            file_path = filedialog.askopenfilename(
-                title="Select PDF Document for Braille Bridge",
-                filetypes=[("PDF Documents", "*.pdf"), ("All Files", "*.*")]
-            )
-            root.destroy()
-        except Exception as e:
-            print(f"Could not open file picker dialog: {e}")
+    def __init__(self):
+        self.state = 'IDLE'  # 'IDLE' | 'LISTING' | 'AWAITING_CONFIRMATION' | 'PROCESSING'
+        self.current_folder = 'documents'
+        self.current_subpath = ''
+        self.candidates: List[Dict[str, Any]] = []
+        self.selected_file: Optional[Dict[str, Any]] = None
+        self.page = 1
+        self.total_pages = 1
+        self.last_spoken = ''
 
-    if not file_path:
-        speak("No PDF file was selected.")
-        return
-
-    if not os.path.exists(file_path):
-        speak(f"File not found: {file_path}")
-        return
-
-    print(f"\nProcessing PDF: {file_path}...")
-    try:
-        with open(file_path, 'rb') as f:
-            data = f.read()
-        res = documents.extract_pdf_text(data)
-
-        if not res['text'] and res['is_scanned']:
-            msg = f"This PDF contains {res['pages']} scanned page(s) with no digital text."
-            speak(msg)
+    def browse_folder(self, folder_alias: str = 'documents', subpath: str = '', page: int = 1):
+        res = documents.browse_folder(folder_alias, subpath, page=page, page_size=6)
+        if not res.get('ok'):
+            speak(f"Could not open folder {folder_alias}: {res.get('error')}")
             return
 
-        conv = braille.convert_full(res['text'][:20000], 'auto', 1)
-        filename = os.path.basename(file_path)
-        summary = (
-            f"Successfully processed {filename}. "
-            f"Extracted {res['chars']} characters across {res['pages']} pages, "
-            f"converted into {conv['count']} Braille cells."
-        )
-        speak(summary)
+        self.current_folder = res.get('folder_name', folder_alias)
+        self.current_subpath = subpath
+        self.candidates = res.get('files', [])
+        self.page = res.get('page', 1)
+        self.total_pages = res.get('total_pages', 1)
+        self.state = 'LISTING'
+        self.last_spoken = res.get('spoken_summary', '')
 
-        print("=" * 60)
-        print(f"Extracted Text (first 300 chars):\n{res['text'][:300]}...")
-        print("-" * 60)
-        print(f"Braille Output (first 100 cells):\n{conv['braille'][:100]}...")
-        print("=" * 60)
+        print(f"\n[Folder: {self.current_folder}] (Page {self.page} of {self.total_pages})")
+        for f in self.candidates:
+            print(f"  [{f['id']}] {f['filename']} ({f['size_str']})")
 
-        # Open the website so the user can feel/see it
-        start_server_in_background()
-        webbrowser.open(f"{SERVER_URL}#uploaded")
+        speak(self.last_spoken)
 
-    except Exception as e:
-        speak(f"Error reading PDF: {e}")
+    def search(self, query: str, folder_alias: str = ''):
+        res = documents.search_files(query, folder_alias, max_results=6)
+        self.candidates = res.get('files', [])
+        self.page = 1
+        self.total_pages = 1
+        self.state = 'LISTING'
+        self.last_spoken = res.get('spoken_summary', '')
+
+        print(f"\n[Search Results: '{query}']")
+        for f in self.candidates:
+            print(f"  [{f['id']}] {f['filename']} ({f.get('folder', '')})")
+
+        speak(self.last_spoken)
+
+    def select_candidate(self, phrase: str) -> bool:
+        if not self.candidates:
+            speak("No files are currently listed. You can say: find my project PDF, or open Documents.")
+            return False
+
+        filenames = [f['filename'] for f in self.candidates]
+        idx = documents.resolve_ordinal_selection(phrase, len(self.candidates), filenames)
+
+        if idx is None:
+            speak(f"I didn't catch that. Please say number 1 through {len(self.candidates)}, or speak the filename.")
+            return False
+
+        self.selected_file = self.candidates[idx]
+        self.state = 'AWAITING_CONFIRMATION'
+        prompt = f"You selected {self.selected_file['filename']}. Shall I upload it?"
+        self.last_spoken = prompt
+        speak(prompt)
+        return True
+
+    def confirm_upload(self):
+        if not self.selected_file:
+            speak("No file is selected. Please select a file first.")
+            return
+
+        target = self.selected_file
+        self.state = 'PROCESSING'
+        speak(f"Uploading and processing {target['filename']}...")
+
+        try:
+            res = documents.process_selected_file(target['path'], lang='auto', grade=1)
+            self.state = 'IDLE'
+            self.selected_file = None
+
+            print("\n" + "=" * 60)
+            print(f"Document: {res['filename']} ({res['pages']} pages, {res['chars']} chars)")
+            print(f"Extracted Text:\n{res['text'][:300]}...")
+            print("-" * 60)
+            if res.get('conversion'):
+                print(f"Braille Unicode:\n{res['conversion']['braille'][:150]}...")
+                print(f"Braille ASCII:\n{res['conversion']['ascii'][:150]}...")
+                print(f"Total Braille Cells: {res['conversion']['count']}")
+            print("=" * 60)
+
+            speak(res['spoken_summary'])
+
+            # Open website so the user can interact or feel the cell
+            start_server_in_background()
+            webbrowser.open(f"{SERVER_URL}#uploaded")
+
+        except Exception as e:
+            speak(f"Error processing document: {e}")
+            self.state = 'LISTING'
+
+    def cancel(self):
+        self.selected_file = None
+        speak("Upload cancelled. Which file would you like to select?")
+        self.state = 'LISTING' if self.candidates else 'IDLE'
+
+    def repeat(self):
+        if self.state == 'AWAITING_CONFIRMATION' and self.selected_file:
+            speak(f"You selected {self.selected_file['filename']}. Shall I upload it?")
+        elif self.state == 'LISTING' and self.last_spoken:
+            speak(self.last_spoken)
+        else:
+            speak("Welcome to Braille Bridge. Which file would you like to convert? You can say: Find my project PDF, or open Documents, Downloads, or Desktop.")
 
 
 def cmd_help():
     """Print and speak available commands."""
     help_text = (
         "Available voice commands:\n"
-        "1. 'open website' - Launches Braille Bridge in your browser\n"
-        "2. 'upload pdf'    - Selects a PDF file and converts it to Braille\n"
-        "3. 'convert'       - Converts custom text to Braille\n"
-        "4. 'help'          - Shows this help message\n"
-        "5. 'exit'          - Closes the Voice Assistant"
+        "1. 'find my project pdf'   - Searches your folders for matching files\n"
+        "2. 'open documents'        - Browses your Documents folder and reads files aloud\n"
+        "3. 'open downloads'        - Browses your Downloads folder\n"
+        "4. 'open desktop'          - Browses your Desktop folder\n"
+        "5. 'select the second one' - Selects a file by number or name\n"
+        "6. 'yes' / 'confirm'       - Confirms upload and converts to Braille\n"
+        "7. 'repeat'                - Repeats available files or instruction\n"
+        "8. 'cancel'                - Cancels file selection\n"
+        "9. 'convert'               - Converts custom text to Braille\n"
+        "10. 'open website'         - Launches Braille Bridge in your browser\n"
+        "11. 'exit'                 - Closes the Voice Assistant"
     )
     print(help_text)
-    speak("You can say: open website, upload PDF, convert, help, or exit.")
+    speak("You can say: find my project PDF, open Documents, open Downloads, or help.")
 
 
 def main():
     print("=" * 60)
-    print("   Braille Bridge – Voice Assistant")
+    print("   Braille Bridge – Independent Voice Assistant")
     print("=" * 60)
-    speak("Hello! Braille Bridge Voice Assistant is ready.")
-    cmd_help()
 
-    # Try importing speech_recognition if installed
+    mgr = VoiceFileManager()
+    speak("Hello! Welcome to Braille Bridge. Which file would you like to convert? You can say: find my project PDF, or open Documents, Downloads, or Desktop.")
+
     recognizer = None
     microphone = None
     try:
@@ -178,8 +224,8 @@ def main():
                 try:
                     print("🎤 Listening... (Speak now, or press Enter to type)")
                     with microphone as source:
-                        recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                        audio = recognizer.listen(source, timeout=4, phrase_time_limit=5)
+                        recognizer.adjust_for_ambient_noise(source, duration=0.4)
+                        audio = recognizer.listen(source, timeout=5, phrase_time_limit=6)
                     query = recognizer.recognize_google(audio).lower().strip()
                     print(f"Heard: '{query}'")
                 except Exception:
@@ -190,33 +236,73 @@ def main():
             if not query:
                 continue
 
-            if "open website" in query or "website" in query or "launch" in query or "start website" in query:
-                cmd_open_website()
-            elif "upload" in query or "pdf" in query or "document" in query or "find pdf" in query:
-                folder = ""
-                q_text = ""
-                if "desktop" in query: folder = "desktop"
-                elif "download" in query: folder = "downloads"
-                elif "document" in query: folder = "documents"
-                elif "capston" in query: folder = "capston"
-                if "report" in query: q_text = "report"
-                elif "assignment" in query: q_text = "assignment"
-                elif "mahesh" in query: q_text = "mahesh"
-                cmd_upload_pdf(folder_name=folder, query=q_text)
-            elif "convert" in query:
+            # 1. Confirmation state handling
+            if mgr.state == 'AWAITING_CONFIRMATION':
+                if query in ('yes', 'yeah', 'sure', 'confirm', 'upload', 'upload it', 'please do') or 'yes upload' in query:
+                    mgr.confirm_upload()
+                    continue
+                elif query in ('no', 'cancel', 'wrong', 'stop') or 'don t upload' in query:
+                    mgr.cancel()
+                    continue
+                elif 'repeat' in query or 'again' in query:
+                    mgr.repeat()
+                    continue
+
+            # 2. General Cancel & Repeat
+            if query in ('cancel', 'stop') or 'cancel selection' in query:
+                mgr.cancel()
+                continue
+            if 'repeat' in query or 'again' in query:
+                mgr.repeat()
+                continue
+
+            # 3. Selection in LISTING mode
+            if mgr.state == 'LISTING':
+                is_sel = any(w in query for w in ['select', 'choose', 'first', 'second', 'third', 'fourth', 'fifth', 'number', '1', '2', '3', 'last'])
+                if is_sel:
+                    if mgr.select_candidate(query):
+                        continue
+
+            # 4. Folder Navigation
+            if 'open document' in query or 'documents' in query:
+                mgr.browse_folder('documents')
+            elif 'open download' in query or 'downloads' in query:
+                mgr.browse_folder('downloads')
+            elif 'open desktop' in query or 'desktop' in query:
+                mgr.browse_folder('desktop')
+            elif 'capston' in query:
+                mgr.browse_folder('capston')
+
+            # 5. Search Commands
+            elif query.startswith('find ') or query.startswith('search ') or 'project pdf' in query or 'find my' in query:
+                q_text = query.replace('find my', '').replace('find', '').replace('search for', '').replace('search', '').strip()
+                if not q_text or q_text == 'pdf':
+                    q_text = 'project'
+                mgr.search(q_text)
+
+            elif 'upload' in query or 'pdf' in query:
+                speak("Which file would you like to convert? You can say: find my project PDF, or open Documents, Downloads, or Desktop.")
+
+            # 6. Convert Text Directly
+            elif 'convert' in query:
                 txt = input("Enter text to convert to Braille: ").strip()
                 if txt:
                     r = braille.convert_full(txt, 'auto', 1)
-                    print(f"Braille: {r['braille']}")
+                    print(f"Braille Unicode: {r['braille']}")
                     speak(f"Converted to {r['count']} Braille cells.")
-            elif "help" in query or "commands" in query:
+
+            # 7. Website, Help, Exit
+            elif 'open website' in query or 'website' in query or 'launch' in query:
+                cmd_open_website()
+            elif 'help' in query or 'commands' in query:
                 cmd_help()
-            elif "exit" in query or "quit" in query or "bye" in query:
+            elif 'exit' in query or 'quit' in query or 'bye' in query:
                 speak("Goodbye! Have a great day.")
                 break
             else:
-                print(f"Unknown command: '{query}'. Say 'help' to see available commands.")
+                print(f"Unknown command: '{query}'. Say 'help' for available commands.")
                 speak("I did not catch that. Say help for commands.")
+
         except (KeyboardInterrupt, EOFError):
             print("\nExiting Voice Assistant...")
             break
@@ -224,3 +310,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
