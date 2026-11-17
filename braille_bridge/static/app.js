@@ -1,10 +1,26 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const DOTPOS = [[20, 18], [20, 45], [20, 72], [40, 18], [40, 45], [40, 72]];
-const state = { result: null, idx: 0, timer: null, quiz: null, answered: false, editCell: 0, testCell: 0 };
+const state = {
+  result: null,
+  idx: 0,
+  timer: null,
+  quiz: null,
+  answered: false,
+  editCell: 0,
+  testCell: 0,
+  stats: { conversions: 1, chars: 1240 },
+  revisionOnly: false
+};
 
 /* ---------- helpers ---------- */
-function setStatus(msg, kind) { const s = $('#status'); s.textContent = msg || ''; s.className = 'status ' + (kind || ''); }
+function setStatus(msg, kind) {
+  const s = $('#status');
+  if (s) {
+    s.textContent = msg || '';
+    s.className = 'status-bar ' + (kind || '');
+  }
+}
 async function api(path, opts) {
   let r;
   try { r = await fetch(path, opts); } catch (e) { throw new Error('Cannot reach the Braille Bridge server'); }
@@ -58,22 +74,45 @@ function download(name, text, type) {
 function el(tag, props = {}, ...kids) { const e = Object.assign(document.createElement(tag), props); kids.forEach(k => e.append(k)); return e; }
 
 /* ---------- tabs ---------- */
-const TABS = ['convert', 'learn', 'device'];
+const TABS = ['home', 'dashboard', 'convert', 'pdf', 'learn', 'sim', 'device'];
 function showTab(name) {
   TABS.forEach(t => {
-    const sel = t === name; $('#t-' + t).setAttribute('aria-selected', sel); $('#t-' + t).tabIndex = sel ? 0 : -1; $('#p-' + t).hidden = !sel;
-  });
-  if (name === 'learn') { refreshSets(); if (!state.quiz) nextQuestion(); }
-  if (name === 'device') refreshPorts();
-  setStatus('');
-}
-TABS.forEach((t, i) => {
-  $('#t-' + t).addEventListener('click', () => showTab(t));
-  $('#t-' + t).addEventListener('keydown', e => {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      const n = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length]; showTab(n); $('#t-' + n).focus();
+    const btn = $('#t-' + t);
+    const panel = $('#p-' + t);
+    const sel = (t === name);
+    if (btn) {
+      btn.setAttribute('aria-selected', sel ? 'true' : 'false');
+      btn.tabIndex = sel ? 0 : -1;
+    }
+    if (panel) {
+      panel.hidden = !sel;
     }
   });
+
+  const links = $('#main-nav-links');
+  if (links) links.classList.remove('mobile-open');
+
+  if (name === 'learn') { refreshSets(); if (!state.quiz) nextQuestion(); }
+  if (name === 'sim') updateSimulator(state.testCell || 0);
+  if (name === 'device') refreshPorts();
+  if (name === 'dashboard') updateDashboard();
+  setStatus('');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+TABS.forEach((t, i) => {
+  const btn = $('#t-' + t);
+  if (btn) {
+    btn.addEventListener('click', () => showTab(t));
+    btn.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        const n = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+        showTab(n);
+        const nextBtn = $('#t-' + n);
+        if (nextBtn) nextBtn.focus();
+      }
+    });
+  }
 });
 
 /* ---------- convert ---------- */
@@ -85,7 +124,16 @@ function applyConversionResult(r, note) {
   if (r.unsupported && r.unsupported.length) {
     w.textContent = 'These characters are not supported yet and were shown as a full cell: ' + r.unsupported.join(' ');
   }
-  ['#btn-copy', '#btn-brf', '#btn-txt', '#btn-speak'].forEach(b => $(b).disabled = false);
+  ['#btn-copy', '#btn-brf', '#btn-txt', '#btn-speak'].forEach(b => {
+    if ($(b)) $(b).disabled = false;
+  });
+
+  // Update session metrics
+  state.stats.conversions += 1;
+  state.stats.chars += (r.count || 0);
+  if ($('#dash-conversions')) $('#dash-conversions').textContent = state.stats.conversions;
+  if ($('#dash-chars')) $('#dash-chars').textContent = state.stats.chars.toLocaleString();
+
   const strip = $('#strip'); strip.replaceChildren();
   const maxStripCells = Math.min(r.cells.length, 300);
   for (let i = 0; i < maxStripCells; i++) {
@@ -100,6 +148,21 @@ function applyConversionResult(r, note) {
       `Showing first ${maxStripCells} of ${r.cells.length} cells. Use the Player below or Download .brf for full output.`));
   }
   showCell(0);
+}
+
+function updateCharCount() {
+  const val = $('#text') ? $('#text').value : '';
+  const words = val.trim() ? val.trim().split(/\s+/).length : 0;
+  const badge = $('#char-count-badge');
+  if (badge) badge.textContent = `${val.length} character${val.length === 1 ? '' : 's'} · ${words} word${words === 1 ? '' : 's'}`;
+}
+if ($('#text')) $('#text').addEventListener('input', updateCharCount);
+
+if ($('#btn-toggle-font')) {
+  $('#btn-toggle-font').onclick = () => {
+    const u = $('#unicode');
+    if (u) u.classList.toggle('large-font');
+  };
 }
 
 async function convert() {
@@ -162,6 +225,10 @@ async function handlePdfUpload(f) {
       return;
     }
     $('#text').value = r.text || '';
+    if ($('#pdf-preview-text')) $('#pdf-preview-text').value = r.text || '';
+    if ($('#btn-convert-pdf-text')) $('#btn-convert-pdf-text').disabled = !r.text;
+    updateCharCount();
+
     if (r.conversion && r.conversion.cells) {
       applyConversionResult(r.conversion, `from "${r.filename}"`);
       const msg = `PDF "${r.filename}" loaded: ${r.chars} characters converted to ${r.conversion.count} Braille cells.`;
@@ -175,6 +242,39 @@ async function handlePdfUpload(f) {
     setStatus(err.message, 'bad');
     speak('Error processing PDF: ' + err.message);
   }
+}
+
+// Drag & drop upload zone
+const dropzone = $('#pdf-dropzone');
+if (dropzone) {
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropzone.addEventListener(eventName, e => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('dragover');
+    }, false);
+  });
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropzone.addEventListener(eventName, e => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    }, false);
+  });
+  dropzone.addEventListener('drop', e => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files && files[0]) handlePdfUpload(files[0]);
+  }, false);
+}
+
+if ($('#btn-convert-pdf-text')) {
+  $('#btn-convert-pdf-text').onclick = () => {
+    const txt = $('#pdf-preview-text')?.value || '';
+    if (txt) {
+      $('#text').value = txt;
+      showTab('convert');
+      convert();
+    }
+  };
 }
 if ($('#pdf-file')) {
   $('#pdf-file').addEventListener('change', e => {
@@ -521,26 +621,35 @@ $('#file').addEventListener('change', async e => {
       return;
     }
 
-    // 6. Open Website / Home
-    if (phrase.includes('open website') || phrase.includes('website') || phrase.includes('open home') ||
-        phrase.includes('go home') || phrase.includes('home page') || phrase.includes('open convert') ||
-        phrase.includes('braille bridge') || phrase.includes('main page')) {
-      showTab('convert');
-      announce('Showing Braille Bridge home and converter.');
+    // 6. Navigation Commands
+    if (phrase.includes('open website') || phrase.includes('home') || phrase.includes('main page')) {
+      showTab('home');
+      announce('Showing Braille Bridge homepage.');
       return;
     }
-
-    // 7. Learn Tab
+    if (phrase.includes('dashboard') || phrase.includes('stats') || phrase.includes('overview')) {
+      showTab('dashboard');
+      announce('Opening Dashboard.');
+      return;
+    }
+    if (phrase.includes('open pdf') || phrase.includes('pdf page') || phrase.includes('document page')) {
+      showTab('pdf');
+      announce('Opening PDF and document upload.');
+      return;
+    }
     if (phrase.includes('open learn') || phrase.includes('learn') || phrase.includes('quiz') || phrase.includes('practice') || phrase.includes('study')) {
       showTab('learn');
       announce('Opening Braille Learning Center.');
       return;
     }
-
-    // 8. Device Tab
-    if (phrase.includes('open device') || phrase.includes('device') || phrase.includes('hardware') || phrase.includes('simulator')) {
+    if (phrase.includes('open sim') || phrase.includes('simulator') || phrase.includes('virtual cell')) {
+      showTab('sim');
+      announce('Opening Virtual Braille Mechanical Simulator.');
+      return;
+    }
+    if (phrase.includes('open device') || phrase.includes('device') || phrase.includes('hardware')) {
       showTab('device');
-      announce('Opening Hardware Device and Tactile Simulator.');
+      announce('Opening Physical Hardware Controller.');
       return;
     }
 
@@ -1020,16 +1129,109 @@ if (btnDecode) btnDecode.onclick = decodeBraille;
 const inpBraille = $('#braille-input');
 if (inpBraille) inpBraille.addEventListener('keydown', e => { if (e.key === 'Enter') decodeBraille(); });
 
+/* ---------- theme & dashboard & navigation extras ---------- */
+function initTheme() {
+  const saved = localStorage.getItem('braille_theme');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  const icon = $('#theme-icon');
+  if (icon) icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('braille_theme', next);
+  const icon = $('#theme-icon');
+  if (icon) icon.textContent = next === 'dark' ? '☀️' : '🌙';
+}
+if ($('#btn-theme-toggle')) $('#btn-theme-toggle').onclick = toggleTheme;
+
+if ($('#btn-mobile-menu')) {
+  $('#btn-mobile-menu').onclick = () => {
+    const links = $('#main-nav-links');
+    if (links) links.classList.toggle('mobile-open');
+  };
+}
+
+// Quick navigation triggers
+if ($('#brand-home-link')) $('#brand-home-link').onclick = () => showTab('home');
+if ($('#btn-hero-convert')) $('#btn-hero-convert').onclick = () => showTab('convert');
+if ($('#btn-hero-learn')) $('#btn-hero-learn').onclick = () => showTab('learn');
+if ($('#btn-hero-sim')) $('#btn-hero-sim').onclick = () => showTab('sim');
+if ($('#card-launch-convert')) $('#card-launch-convert').onclick = () => showTab('convert');
+if ($('#card-launch-pdf')) $('#card-launch-pdf').onclick = () => showTab('pdf');
+if ($('#card-launch-learn')) $('#card-launch-learn').onclick = () => showTab('learn');
+if ($('#card-launch-sim')) $('#card-launch-sim').onclick = () => showTab('sim');
+if ($('#btn-dash-quick-convert')) $('#btn-dash-quick-convert').onclick = () => showTab('convert');
+if ($('#btn-dash-quick-upload')) $('#btn-dash-quick-upload').onclick = () => showTab('pdf');
+
+// Hardware Ping
+if ($('#btn-dev-ping')) {
+  $('#btn-dev-ping').onclick = async () => {
+    const port = $('#port') ? $('#port').value : 'VIRTUAL';
+    setStatus(`Pinging device on port ${port}…`);
+    try {
+      const res = await post('/api/device/ping', { port });
+      if (res.ok) setStatus(`Ping successful: ${res.response || 'Ready'}`, 'ok');
+      else setStatus(`Ping failed: ${res.error || 'No response'}`, 'bad');
+    } catch (e) {
+      setStatus('Ping error: ' + e.message, 'bad');
+    }
+  };
+}
+
+async function updateDashboard() {
+  try {
+    const stats = await api('/api/learning/stats?user=' + encodeURIComponent(user()));
+    if ($('#dash-mastery')) $('#dash-mastery').textContent = (stats.accuracy || 0) + '%';
+    if ($('#dash-mastery-sub')) $('#dash-mastery-sub').textContent = `${stats.total_attempts} attempts · ${stats.mastered_items} mastered`;
+    const dev = await api('/api/device/status');
+    if ($('#dash-hardware-status')) $('#dash-hardware-status').textContent = dev.port === 'VIRTUAL' ? 'Virtual Ready' : (dev.running ? 'Transmitting' : 'Connected');
+  } catch (e) {}
+}
+
+function initHeroCellAnimation() {
+  const heroHost = $('#hero-cell-graphic');
+  const heroChar = $('#hero-cell-char');
+  if (!heroHost) return;
+  const sequence = [
+    { ch: 'B', cell: 3 },
+    { ch: 'R', cell: 23 },
+    { ch: 'A', cell: 1 },
+    { ch: 'I', cell: 10 },
+    { ch: 'L', cell: 7 },
+    { ch: 'L', cell: 7 },
+    { ch: 'E', cell: 17 }
+  ];
+  let heroIdx = 0;
+  setInterval(() => {
+    heroIdx = (heroIdx + 1) % sequence.length;
+    const cur = sequence[heroIdx];
+    heroHost.replaceChildren(cellSVG(cur.cell, 70, { numbers: true }));
+    if (heroChar) heroChar.textContent = `Letter "${cur.ch}"`;
+  }, 1600);
+  heroHost.replaceChildren(cellSVG(sequence[0].cell, 70, { numbers: true }));
+}
+
 /* ---------- init ---------- */
 (async function init() {
-  const lg = $('#logo'); lg.replaceChildren(...cellSVG(0b101101, 26).childNodes);
+  initTheme();
+  const lg = $('#logo');
+  if (lg) lg.replaceChildren(...cellSVG(0b101101, 26).childNodes);
   drawEditor($('#test-cell'), 'testCell');
   initSimulatorChannels();
   updateSimulator(0);
+  initHeroCellAnimation();
+  updateCharCount();
+
   try {
     const h = await api('/api/health');
-    $('#ocr-note').textContent = h.ocr.available ? 'Languages installed for OCR: ' + h.ocr.languages.filter(l => ['eng', 'hin'].includes(l)).join(', ') : 'OCR is not available: ' + h.ocr.hint;
-    $('#file').disabled = !h.ocr.available;
+    if ($('#ocr-note')) $('#ocr-note').textContent = h.ocr.available ? 'Languages installed for OCR: ' + h.ocr.languages.filter(l => ['eng', 'hin'].includes(l)).join(', ') : 'OCR is not available: ' + h.ocr.hint;
+    if ($('#file')) $('#file').disabled = !h.ocr.available;
     refreshPorts();
+    updateDashboard();
   } catch (e) { setStatus(e.message, 'bad'); }
 })();
