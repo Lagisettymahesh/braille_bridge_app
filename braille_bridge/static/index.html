@@ -14,7 +14,9 @@
 <header class="top-nav">
   <div class="nav-container">
     <div class="nav-brand" id="brand-home-link" role="button" tabindex="0" title="Braille Bridge Home">
-      <svg class="logo-icon" viewBox="0 0 60 90" width="30" height="42" aria-hidden="true" id="logo"></svg>
+      <div class="logo-badge" aria-hidden="true">
+        <svg class="logo-icon" viewBox="0 0 60 90" width="22" height="30" aria-hidden="true" id="logo"></svg>
+      </div>
       <div class="brand-text-wrap">
         <span class="brand-title">Braille Bridge <span class="badge-version">v2.0 PRO</span></span>
         <span class="brand-subtitle">Automated Text-to-Braille Platform</span>
@@ -50,9 +52,19 @@
 <!-- ==================== VOICE ASSISTANT BANNER ==================== -->
 <div id="va-banner" class="va-banner" hidden>
   <div style="flex:1">
-    <div class="va-indicator">
-      <span class="va-pulse-dot"></span>
-      <strong id="va-status-text">🎙️ Voice Assistant Active · Listening for commands…</strong>
+    <div class="va-header-row">
+      <div class="va-mic-avatar" aria-hidden="true">🎙️</div>
+      <div class="va-waveform" aria-hidden="true" id="va-waveform">
+        <div class="va-waveform-bar"></div>
+        <div class="va-waveform-bar"></div>
+        <div class="va-waveform-bar"></div>
+        <div class="va-waveform-bar"></div>
+        <div class="va-waveform-bar"></div>
+      </div>
+      <div class="va-status-pill">
+        <span class="va-pulse-dot"></span>
+        <span id="va-status-text">Voice Assistant Active · Listening for commands…</span>
+      </div>
     </div>
     <p id="va-transcript" class="va-transcript">Hello and good morning! What file do you want to upload, and what file do you want to convert?</p>
     
@@ -72,13 +84,13 @@
     </div>
 
     <div class="va-chips">
-      <button type="button" class="va-chip" data-cmd="open documents">📁 Documents</button>
-      <button type="button" class="va-chip" data-cmd="open downloads">📥 Downloads</button>
-      <button type="button" class="va-chip" data-cmd="open desktop">🖥️ Desktop</button>
-      <button type="button" class="va-chip" data-cmd="find project pdf">🔍 Find Project PDF</button>
-      <button type="button" class="va-chip" data-cmd="repeat">🔁 Repeat Files</button>
+      <button type="button" class="va-chip chip-folder" data-cmd="open documents">📁 Documents</button>
+      <button type="button" class="va-chip chip-folder" data-cmd="open downloads">📥 Downloads</button>
+      <button type="button" class="va-chip chip-folder" data-cmd="open desktop">🖥️ Desktop</button>
+      <button type="button" class="va-chip chip-search" data-cmd="find project pdf">🔍 Find Project PDF</button>
+      <button type="button" class="va-chip chip-action" data-cmd="repeat">🔁 Repeat Files</button>
       <button type="button" class="va-chip" data-cmd="go back">🔙 Go Back</button>
-      <button type="button" class="va-chip" data-cmd="convert">⚡ Convert</button>
+      <button type="button" class="va-chip chip-action" data-cmd="convert">⚡ Convert</button>
       <button type="button" class="va-chip" data-cmd="stop speaking">⏹️ Stop Speaking</button>
       <button type="button" class="va-chip" data-cmd="test dots">🧪 Test Dots</button>
       <button type="button" class="va-chip" data-cmd="help">❓ Help</button>
@@ -99,20 +111,20 @@
   <!-- Hero Section -->
   <div class="hero-section">
     <div class="hero-pill-badge">
-      <span>✨ Alliance University Capstone Project</span> · <span>55/55 Tests Verified</span>
+      <span>✨ Alliance University Capstone Project</span> · <span>61/61 Tests Verified</span>
     </div>
-    <h1 class="hero-title">Breaking Barriers Through Braille Technology</h1>
+    <h1 class="hero-title">Breaking Barriers Through <span class="hero-title-highlight">Braille Technology</span></h1>
     <p class="hero-subtitle">
       Convert text into accessible Braille, explore tactile learning and connect digital content with physical Braille technology.
     </p>
     <div class="hero-cta-group">
-      <button class="primary" id="btn-hero-convert" style="font-size:1.05rem; padding:0.75rem 1.6rem;">
+      <button class="primary hero-cta-btn" id="btn-hero-convert">
         ⚡ Start Braille Conversion
       </button>
-      <button class="secondary" id="btn-hero-learn" style="font-size:1.05rem; padding:0.75rem 1.6rem;">
+      <button class="btn-lavender hero-cta-btn" id="btn-hero-learn">
         🎓 Explore Learning
       </button>
-      <button class="outline-accent" id="btn-hero-sim" style="font-size:1.05rem; padding:0.75rem 1.6rem;">
+      <button class="btn-peach hero-cta-btn" id="btn-hero-sim">
         🖥️ Try Virtual Braille
       </button>
     </div>
@@ -120,9 +132,9 @@
     <!-- Live Animated Hero Cell -->
     <div class="hero-cell-preview">
       <div class="live-hero-cell">
-        <span style="font-size:0.8rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Tactile Preview</span>
+        <span class="live-hero-tag">Tactile Preview</span>
         <div id="hero-cell-graphic" style="width:70px; height:105px;"></div>
-        <span id="hero-cell-char" style="font-size:1.25rem; font-weight:800; color:var(--brand-secondary);">Letter "B"</span>
+        <span id="hero-cell-char" style="font-size:1.25rem; font-weight:800; color:var(--palette-fresh-green-dark);">Letter "B"</span>
       </div>
     </div>
   </div>
@@ -135,23 +147,23 @@
   </div>
 
   <div class="grid-4col" style="margin-bottom:3.5rem;">
-    <div class="feature-card">
-      <div class="feature-icon-badge">🔤</div>
+    <div class="feature-card card-mint">
+      <div class="feature-icon-badge badge-mint">🔤</div>
       <h3>Bilingual Translation Engine</h3>
       <p>Supports Unified English Braille (UEB) Grade 1 & Grade 2 contractions and Bharati Braille Hindi with Devanagari vowels, consonants, and single-cell conjuncts.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon-badge">📄</div>
+    <div class="feature-card card-peach">
+      <div class="feature-icon-badge badge-peach">📄</div>
       <h3>Multi-Page PDF & Dual OCR</h3>
       <p>High-capacity document processing up to 200,000 characters with selective page range extraction and fallback to Windows Media Runtime and Tesseract OCR.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon-badge">⚙️</div>
+    <div class="feature-card card-yellow">
+      <div class="feature-icon-badge badge-yellow">⚙️</div>
       <h3>ESP32 Physical Actuator</h3>
       <p>Interfaces with a single-character 6-servo Braille cell via PCA9685 I2C controller, tactile advance button (GPIO 32), and buzzer (GPIO 25).</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon-badge">🧠</div>
+    <div class="feature-card card-lavender">
+      <div class="feature-icon-badge badge-lavender">🧠</div>
       <h3>Adaptive Leitner Learning</h3>
       <p>SQLite-backed 3-box spaced repetition system with 6 tiered curricula across Beginner, Intermediate, and Advanced, plus targeted error revision.</p>
     </div>
@@ -166,17 +178,17 @@
 
   <div class="steps-grid">
     <div class="step-card">
-      <span class="step-num-badge">1</span>
+      <span class="step-num-badge step-1">1</span>
       <h3 style="margin-bottom:0.4rem;">Ingest & Input</h3>
       <p class="hint">Type text, speak dictation hands-free, upload multi-page PDFs, or snap a photo of a printed page.</p>
     </div>
     <div class="step-card">
-      <span class="step-num-badge">2</span>
+      <span class="step-num-badge step-2">2</span>
       <h3 style="margin-bottom:0.4rem;">Rule-Based Translation</h3>
       <p class="hint">High-throughput Python engine translates 5,000 chars in 18.4ms into 6-dot Unicode, ASCII Braille, and BRF files.</p>
     </div>
     <div class="step-card">
-      <span class="step-num-badge">3</span>
+      <span class="step-num-badge step-3">3</span>
       <h3 style="margin-bottom:0.4rem;">Tactile Actuation & Feedback</h3>
       <p class="hint">Step through characters on the physical ESP32 6-dot cell or practice with the interactive virtual mechanical simulator.</p>
     </div>
@@ -186,7 +198,7 @@
   <div class="stats-banner">
     <div class="stats-grid">
       <div>
-        <div class="stat-item-num">55 / 55</div>
+        <div class="stat-item-num">61 / 61</div>
         <div class="stat-item-label">Automated Tests Passed (100%)</div>
       </div>
       <div>
@@ -224,37 +236,37 @@
 
   <!-- Metric Overview Cards -->
   <div class="grid-4col" style="margin-bottom:1.5rem;">
-    <div class="dash-metric-card">
+    <div class="dash-metric-card metric-mint">
       <div class="dash-metric-info">
         <h4>Conversions</h4>
         <div class="dash-metric-val" id="dash-conversions">1</div>
         <div class="dash-metric-sub">Session active</div>
       </div>
-      <div class="dash-metric-icon">⚡</div>
+      <div class="dash-metric-icon" style="background:var(--palette-soft-mint); color:var(--palette-fresh-green-dark);">⚡</div>
     </div>
-    <div class="dash-metric-card">
+    <div class="dash-metric-card metric-peach">
       <div class="dash-metric-info">
         <h4>Total Characters</h4>
         <div class="dash-metric-val" id="dash-chars">1,240</div>
         <div class="dash-metric-sub">Processed</div>
       </div>
-      <div class="dash-metric-icon">📝</div>
+      <div class="dash-metric-icon" style="background:var(--palette-peach); color:var(--palette-peach-dark);">📝</div>
     </div>
-    <div class="dash-metric-card">
+    <div class="dash-metric-card metric-lavender">
       <div class="dash-metric-info">
         <h4>Learning Accuracy</h4>
         <div class="dash-metric-val" id="dash-mastery">100%</div>
         <div class="dash-metric-sub" id="dash-mastery-sub">0 errors recorded</div>
       </div>
-      <div class="dash-metric-icon">🎯</div>
+      <div class="dash-metric-icon" style="background:var(--palette-lavender); color:var(--palette-lavender-dark);">🎯</div>
     </div>
-    <div class="dash-metric-card">
+    <div class="dash-metric-card metric-yellow">
       <div class="dash-metric-info">
         <h4>Hardware Status</h4>
         <div class="dash-metric-val" id="dash-hardware-status" style="font-size:1.3rem;">Virtual Ready</div>
         <div class="dash-metric-sub" id="dash-hardware-sub">6 Servos Active</div>
       </div>
-      <div class="dash-metric-icon">⚙️</div>
+      <div class="dash-metric-icon" style="background:var(--palette-soft-yellow); color:var(--palette-dark-charcoal);">⚙️</div>
     </div>
   </div>
 
@@ -264,23 +276,23 @@
   </div>
 
   <div class="grid-4col" style="margin-bottom:1.5rem;">
-    <div class="card feature-card" id="card-launch-convert" style="cursor:pointer;">
-      <div class="feature-icon-badge">⚡</div>
+    <div class="card feature-card card-mint" id="card-launch-convert" style="cursor:pointer;">
+      <div class="feature-icon-badge badge-mint">⚡</div>
       <h3>Text-to-Braille</h3>
       <p>Translate plain English and Hindi text with Grade 1 & 2 contractions.</p>
     </div>
-    <div class="card feature-card" id="card-launch-pdf" style="cursor:pointer;">
-      <div class="feature-icon-badge">📄</div>
+    <div class="card feature-card card-peach" id="card-launch-pdf" style="cursor:pointer;">
+      <div class="feature-icon-badge badge-peach">📄</div>
       <h3>Document Ingestion</h3>
       <p>Extract and convert digital or scanned multi-page PDF documents.</p>
     </div>
-    <div class="card feature-card" id="card-launch-learn" style="cursor:pointer;">
-      <div class="feature-icon-badge">🎓</div>
+    <div class="card feature-card card-lavender" id="card-launch-learn" style="cursor:pointer;">
+      <div class="feature-icon-badge badge-lavender">🎓</div>
       <h3>Practice & Quiz</h3>
       <p>Master Braille with adaptive 3-box Leitner spaced repetition flashcards.</p>
     </div>
-    <div class="card feature-card" id="card-launch-sim" style="cursor:pointer;">
-      <div class="feature-icon-badge">🖥️</div>
+    <div class="card feature-card card-yellow" id="card-launch-sim" style="cursor:pointer;">
+      <div class="feature-icon-badge badge-yellow">🖥️</div>
       <h3>Tactile Cell Simulator</h3>
       <p>Interactive 6-dot mechanical actuator test with 50Hz PWM servo readouts.</p>
     </div>
@@ -296,7 +308,7 @@
     <div class="card">
       <div class="card-header">
         <h2><span>1. Enter Text or Dictate</span></h2>
-        <span class="hint" id="char-count-badge">0 characters</span>
+        <span class="char-count-pill" id="char-count-badge">0 characters</span>
       </div>
 
       <label for="text">Text to convert</label>
@@ -448,9 +460,9 @@
       <div style="margin-top:1.25rem;">
         <span style="font-size:0.85rem; font-weight:700; color:var(--text-muted);">Quick local folder scan:</span>
         <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.4rem;">
-          <button type="button" class="va-chip" id="btn-quick-desktop">🖥️ Desktop</button>
-          <button type="button" class="va-chip" id="btn-quick-downloads">📥 Downloads</button>
-          <button type="button" class="va-chip" id="btn-quick-documents">📁 Documents</button>
+          <button type="button" class="va-chip chip-folder" id="btn-quick-desktop">🖥️ Desktop</button>
+          <button type="button" class="va-chip chip-folder" id="btn-quick-downloads">📥 Downloads</button>
+          <button type="button" class="va-chip chip-folder" id="btn-quick-documents">📁 Documents</button>
         </div>
       </div>
       <p class="hint" id="ocr-note" style="margin-top:0.85rem;"></p>
@@ -488,12 +500,12 @@
 
     <!-- Folder Navigation Controls -->
     <div style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:1rem;">
-      <button type="button" class="va-chip" id="fe-btn-documents">📁 Documents</button>
-      <button type="button" class="va-chip" id="fe-btn-downloads">📥 Downloads</button>
-      <button type="button" class="va-chip" id="fe-btn-desktop">🖥️ Desktop</button>
-      <button type="button" class="va-chip" id="fe-btn-capstone">📁 Capstone</button>
+      <button type="button" class="va-chip chip-folder" id="fe-btn-documents">📁 Documents</button>
+      <button type="button" class="va-chip chip-folder" id="fe-btn-downloads">📥 Downloads</button>
+      <button type="button" class="va-chip chip-folder" id="fe-btn-desktop">🖥️ Desktop</button>
+      <button type="button" class="va-chip chip-folder" id="fe-btn-capstone">📁 Capstone</button>
       <button type="button" class="va-chip" id="fe-btn-back" disabled>🔙 Go Back</button>
-      <button type="button" class="va-chip" id="fe-btn-repeat">🔁 Repeat Aloud</button>
+      <button type="button" class="va-chip chip-action" id="fe-btn-repeat">🔁 Repeat Aloud</button>
     </div>
 
     <!-- Search Input for Voice/Manual -->
@@ -548,7 +560,7 @@
         </div>
       </div>
 
-      <button type="button" id="btn-revise" class="btn-preset" style="width:100%; background:var(--status-bad); color:#fff; padding:0.55rem; font-weight:700; margin-bottom:1rem;">
+      <button type="button" id="btn-revise" class="btn-preset" style="width:100%; background:var(--palette-peach); color:var(--palette-peach-dark); border:1.5px solid var(--palette-peach-dark); padding:0.6rem; font-weight:800; margin-bottom:1rem; border-radius:var(--radius-md);">
         🔁 Revise Missed Items (<span id="rev-badge">0</span> unmastered)
       </button>
 
@@ -732,16 +744,16 @@
 </main>
 
 <!-- ==================== PROFESSIONAL FOOTER ==================== -->
-<footer class="main-footer">
-  <div class="footer-content">
-    <div>
-      <strong>Braille Bridge · Automated Text-to-Braille System</strong>
+<footer class="app-footer">
+  <div class="footer-container">
+    <div class="footer-brand">
+      <strong style="color:var(--text-main); font-size:1.05rem;">Braille Bridge · Automated Text-to-Braille System</strong>
       <p class="hint">Final-Year Capstone Project · Alliance University · Lead Developer: Lagisetty Mahesh</p>
     </div>
     <div class="footer-links">
       <a href="https://github.com/Lagisettymahesh/braille_bridge_app" target="_blank" rel="noopener">GitHub Repository</a>
       <a href="/static/Braille_Bridge_Project_Summary.pdf" target="_blank">Documentation PDF</a>
-      <span>WCAG 2.1 AA Compliant</span>
+      <span style="color:var(--palette-fresh-green-dark); font-weight:700;">WCAG 2.1 AA Compliant</span>
     </div>
   </div>
 </footer>

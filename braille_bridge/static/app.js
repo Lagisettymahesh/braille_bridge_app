@@ -49,6 +49,17 @@ function cellSVG(code, px, opts = {}) {
   });
   return svg;
 }
+function updateWaveform(mode) {
+  const wf = $('#va-waveform');
+  if (!wf) return;
+  wf.classList.remove('speaking', 'paused');
+  if (mode === 'speaking') {
+    wf.classList.add('speaking');
+  } else if (mode === 'paused') {
+    wf.classList.add('paused');
+  }
+}
+
 function speak(text, lang, onDone) {
   const liveEl = $('#va-aria-live');
   if (liveEl) liveEl.textContent = text || '';
@@ -60,12 +71,15 @@ function speak(text, lang, onDone) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang || ($('#lang') && $('#lang').value === 'hi' ? 'hi-IN' : 'en-IN');
   state.isSpeaking = true;
+  updateWaveform('speaking');
   u.onend = () => {
     state.isSpeaking = false;
+    updateWaveform(window.__vaListening ? 'active' : 'paused');
     if (onDone) onDone();
   };
   u.onerror = () => {
     state.isSpeaking = false;
+    updateWaveform(window.__vaListening ? 'active' : 'paused');
     if (onDone) onDone();
   };
   speechSynthesis.speak(u);
@@ -788,6 +802,7 @@ $('#file').addEventListener('change', async e => {
       }
     } else {
       stopListening();
+      updateWaveform('paused');
       setStatus('');
     }
   }
@@ -808,6 +823,8 @@ $('#file').addEventListener('change', async e => {
 
       recognition.onstart = () => {
         isListening = true;
+        window.__vaListening = true;
+        if (!state.isSpeaking) updateWaveform('active');
         if (statusText) statusText.textContent = 'Listening for commands…';
       };
 
@@ -830,10 +847,14 @@ $('#file').addEventListener('change', async e => {
           return;
         }
         isListening = false;
+        window.__vaListening = false;
+        if (!state.isSpeaking) updateWaveform('paused');
       };
 
       recognition.onend = () => {
         isListening = false;
+        window.__vaListening = false;
+        if (!state.isSpeaking) updateWaveform('paused');
         if (vaActive && !state.isSpeaking) {
           clearTimeout(restartTimer);
           restartTimer = setTimeout(() => {
@@ -845,6 +866,8 @@ $('#file').addEventListener('change', async e => {
       recognition.start();
     } catch (err) {
       isListening = false;
+      window.__vaListening = false;
+      if (!state.isSpeaking) updateWaveform('paused');
     }
   }
 
@@ -855,6 +878,8 @@ $('#file').addEventListener('change', async e => {
       recognition = null;
     }
     isListening = false;
+    window.__vaListening = false;
+    if (!state.isSpeaking) updateWaveform('paused');
   }
 
   function processCommand(phrase) {

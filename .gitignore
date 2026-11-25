@@ -11,4 +11,6 @@ build/
 .vscode/
 *.log
 *.db
+backup*/
+braille_bridge/static/backup*/
 
